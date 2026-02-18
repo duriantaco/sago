@@ -1,23 +1,26 @@
-# sago MASTER TEMPLATE
+# {{project_name}}
 
-> **sago Framework**  
-> A comprehensive project management template that forces AI into "Atomic Task" mode using structured documentation.
+## Project Vision
 
----
+A brief description of what you're building and why. The planner agent reads this to understand context.
 
-## 📋 PROJECT.md
+**Example:**
+> TaskFlow is a CLI task runner that reads YAML job definitions, resolves dependencies
+> between jobs, and executes them in parallel where possible. It targets small teams
+> who want Make-like automation without learning Make syntax.
 
-### Project Vision
-We are making a better, faster version of GSD in python
+## Tech Stack & Constraints
 
-### Tech Stack & Constraints
-* **Language:** Python 3.11+ (Type hints required)
-* **Framework:** FastAPI (Backend), Typer (CLI)
-* **Database:** SQLite (Dev), PostgreSQL (Prod)
-* **Testing:** Pytest (Must achieve 80% coverage)
-* **Style:** Black formatter, ruff linter
+* **Language:** Python 3.12
+* **Framework:** Typer (CLI), Pydantic (config)
+* **Database:** SQLite (local job history)
+* **Testing:** pytest
 
-### Core Architecture
-* **Modular Monolith:** Logic must be separated into `src/modules/`
-* **No Circular Imports:** Strictly enforced
-* **Config:** 12-factor app pattern using `.env`
+## Core Architecture
+
+Describe the high-level structure: key modules, data flow, and patterns.
+
+**Example:**
+> Single-package CLI (`src/taskflow/`). YAML loader parses job files into a DAG.
+> A scheduler walks the DAG and dispatches jobs to a thread pool. Each job writes
+> structured logs to SQLite so `taskflow history` can show past runs.

@@ -1,3 +1,5 @@
+# Important
+
 When working on this project:
 
 1. **Always reference PLAN.md** to stay focused on atomic tasks

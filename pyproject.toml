@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sago"
 version = "0.1.0"
-description = "Claude Code Control Protocol - AI-powered project orchestration and productivity tool"
-authors = [{name = "sago Contributors"}]
+description = "Spec-Aware Generation Orchestrator - turns markdown specs into working code"
+authors = [{name = "oha"}]
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
@@ -27,6 +27,7 @@ dependencies = [
     "rich>=13.7.0",
     "python-dotenv>=1.0.0",
     "tenacity>=8.2.0",
+    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]
@@ -54,10 +55,10 @@ all = [
 sago = "sago.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/sago-build/sago"
-Documentation = "https://github.com/sago-build/sago#readme"
-Repository = "https://github.com/sago-build/sago"
-Issues = "https://github.com/sago-build/sago/issues"
+Homepage = "https://github.com/duriantaco/sago"
+Documentation = "https://github.com/duriantaco/sago#readme"
+Repository = "https://github.com/duriantaco/sago"
+Issues = "https://github.com/duriantaco/sago/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -71,18 +72,18 @@ include = '\.pyi?$'
 line-length = 100
 target-version = "py311"
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
+    "E",
+    "W",
+    "F",
+    "I",
+    "B",
+    "C4",
     "UP", # pyupgrade
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
+    "E501",
+    "B008",
+    "C901",
 ]
 
 [tool.ruff.per-file-ignores]
@@ -112,7 +113,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=sago --cov-report=term-missing --cov-report=html"
 
-# -- Skylos static analysis --------------------------------------------------
 [tool.skylos]
 complexity = 15
 nesting = 4
@@ -121,9 +121,6 @@ max_lines = 100
 exclude = ["tests", "examples"]
 
 [tool.skylos.gate]
-# Remaining 21 quality findings are false positives from rule limitations:
-# SKY-P403 nested loops on hierarchical data, SKY-C401 boilerplate clones,
-# SKY-C303 CLI arg counts, SKY-L006 Optional returns, SKY-P401 small file reads.
 fail_on_critical = true
 max_critical = 0
 max_high = 0

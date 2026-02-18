@@ -67,4 +67,12 @@ Thumbs.db
 *.bak
 *.backup
 
-*.ruff_cache
+/PROJECT.md
+/REQUIREMENTS.md
+/ROADMAP.md
+/STATE.md
+/PLAN.md
+/SUMMARY.md
+/IMPORTANT.md
+
+.planning

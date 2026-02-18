@@ -24,7 +24,6 @@ from sago.agents import BaseAgent, AgentResult
 
 class CustomAgent(BaseAgent):
     async def execute(self, context: dict[str, Any]) -> AgentResult:
-        # Your agent logic here
         return self._create_result(
             status=AgentStatus.SUCCESS,
             output="Task completed",
@@ -183,17 +182,14 @@ from sago.agents import DependencyResolver
 
 resolver = DependencyResolver()
 
-# Resolve tasks into waves
 waves = resolver.resolve(tasks)
 
 # Wave 1: [task1.1, task2.1]  # Can run in parallel
 # Wave 2: [task1.2]             # Depends on wave 1
 # Wave 3: [task1.3, task2.2]    # Can run in parallel
 
-# Get flat execution order
 ordered_tasks = resolver.get_task_order(tasks)
 
-# Visualize dependencies
 print(resolver.visualize_dependencies(tasks))
 ```
 
@@ -247,23 +243,20 @@ from pathlib import Path
 
 orchestrator = Orchestrator(config=config)
 
-# Run complete workflow
 result = await orchestrator.run_workflow(
     project_path=Path("./my-project"),
-    plan=True,              # Generate plan if needed
-    execute=True,           # Execute tasks
-    verify=True,            # Verify each task
-    max_retries=2,          # Retry failed tasks
-    continue_on_failure=False  # Stop on first failure
+    plan=True,
+    execute=True,
+    verify=True,
+    max_retries=2,
+    continue_on_failure=False
 )
 
-# Check results
 print(f"Success: {result.success}")
 print(f"Completed: {result.completed_tasks}/{result.total_tasks}")
 print(f"Failed: {result.failed_tasks}")
 print(f"Duration: {result.total_duration:.1f}s")
 
-# Get detailed task results
 for task_exec in result.task_executions:
     print(f"{task_exec.task.id}: {task_exec.duration:.1f}s")
 ```
@@ -271,14 +264,12 @@ for task_exec in result.task_executions:
 **Advanced Options:**
 
 ```python
-# Generate plan only, don't execute
 result = await orchestrator.run_workflow(
     project_path=path,
     plan=True,
     execute=False
 )
 
-# Execute existing plan without verification
 result = await orchestrator.run_workflow(
     project_path=path,
     plan=False,
@@ -286,11 +277,10 @@ result = await orchestrator.run_workflow(
     verify=False
 )
 
-# Continue execution even if tasks fail
 result = await orchestrator.run_workflow(
     project_path=path,
-    continue_on_failure=True,  # Complete as many tasks as possible
-    max_retries=3              # Try each task up to 3 times
+    continue_on_failure=True,
+    max_retries=3
 )
 ```
 
@@ -334,7 +324,7 @@ result = await orchestrator.run_workflow(
 ```python
 result = await orchestrator.run_workflow(
     project_path=path,
-    max_retries=2  # Retry each task up to 2 times
+    max_retries=2
 )
 
 for task_exec in result.task_executions:
@@ -437,16 +427,14 @@ python scripts/verify_setup.py
 Configure agent behavior in `.env` or environment:
 
 ```bash
-# LLM Settings
 sago_LLM_PROVIDER=openai
 sago_LLM_MODEL=gpt-4-turbo-preview
 sago_LLM_API_KEY=sk-...
 sago_LLM_TEMPERATURE=0.3
 sago_LLM_MAX_TOKENS=4000
 
-# Execution Settings
 sago_MAX_RETRIES=2
-sago_VERIFY_TIMEOUT=300  # 5 minutes
+sago_VERIFY_TIMEOUT=300
 sago_EXECUTION_TIMEOUT=600  # 10 minutes
 
 # Compression (optional)
@@ -490,10 +478,8 @@ STATE.md is automatically updated after each task:
 ```python
 result = await orchestrator.run_workflow(project_path=path)
 
-# Summary
 print(result.to_dict())
 
-# Per-task details
 for task_exec in result.task_executions:
     print(f"\nTask: {task_exec.task.id} - {task_exec.task.name}")
     print(f"  Status: {'✓' if task_exec.success else '✗'}")
@@ -571,10 +557,8 @@ sago status
 Run agent system tests:
 
 ```bash
-# All agent tests
 pytest tests/test_dependencies.py tests/test_orchestrator.py -v
 
-# Specific test
 pytest tests/test_orchestrator.py::test_run_workflow_plan_exists -v
 
 # With coverage

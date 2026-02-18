@@ -1,10 +1,13 @@
-## REQUIREMENTS.md
+# {{project_name}} Requirements
 
-### V1 Requirements (MVP)
-* [ ] **REQ-1:** User can initialize a new project via CLI
-* [ ] **REQ-2:** System blocks `youtube.com` via `/etc/hosts` injection
-* [ ] **REQ-3:** AI Agent parses `PROJECT.md` to understand context
+## V1 Requirements (MVP)
 
-### V2 Requirements (Post-Launch)
-* [ ] **REQ-4:** Web dashboard for visualizing task progress
-* [ ] **REQ-5:** Cross-platform support for Windows Registry editing
+Each requirement becomes one or more tasks in the plan. Be specific about inputs, outputs, and behavior.
+
+* [ ] **REQ-1:** Parse YAML job files with `name`, `command`, `depends_on` fields and validate the schema on load
+* [ ] **REQ-2:** Build a dependency DAG from parsed jobs and detect circular dependencies before execution
+
+## V2 Requirements (Future)
+
+* [ ] **REQ-3:**
+* [ ] **REQ-4:**
