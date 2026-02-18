@@ -1,0 +1,65 @@
+"""Tests for configuration management."""
+
+import os
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from sago.core.config import Config
+
+
+def test_config_default_values() -> None:
+    """Test that config loads with default values."""
+    config = Config()
+    assert config.llm_provider == "openai"
+    assert config.llm_temperature == 0.1
+    assert config.enable_git_commits is True
+    assert config.log_level == "INFO"
+
+
+def test_config_loads_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that config loads from environment variables."""
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("LLM_MODEL", "claude-3-opus-20240229")
+    monkeypatch.setenv("LLM_TEMPERATURE", "0.5")
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+    config = Config()
+    assert config.llm_provider == "anthropic"
+    assert config.llm_model == "claude-3-opus-20240229"
+    assert config.llm_temperature == 0.5
+    assert config.log_level == "DEBUG"
+
+
+def test_config_creates_planning_dir() -> None:
+    """Test that planning directory is created automatically."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        planning_dir = Path(tmpdir) / ".planning"
+        config = Config(planning_dir=planning_dir)
+        assert config.planning_dir.exists()
+        assert config.planning_dir.is_dir()
+
+
+def test_get_hosts_file_path() -> None:
+    """Test that hosts file path is OS-appropriate."""
+    config = Config()
+    hosts_path = config.get_hosts_file_path()
+    assert isinstance(hosts_path, Path)
+    assert "hosts" in str(hosts_path).lower()
+
+
+def test_config_with_env_file(tmp_path: Path) -> None:
+    """Test that config loads from .env file."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("LLM_PROVIDER=azure\nLLM_MODEL=gpt-4\n")
+
+    # Change to temp directory
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        config = Config()
+        assert config.llm_provider == "azure"
+        assert config.llm_model == "gpt-4"
+    finally:
+        os.chdir(original_cwd)
