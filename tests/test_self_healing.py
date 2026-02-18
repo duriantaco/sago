@@ -1,7 +1,3 @@
-"""Tests for self-healing agent."""
-
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from sago.agents.self_healing import SelfHealingAgent
@@ -11,13 +7,11 @@ from sago.core.parser import Task
 
 @pytest.fixture
 def agent() -> SelfHealingAgent:
-    """Create a SelfHealingAgent with default config."""
     return SelfHealingAgent(config=Config())
 
 
 @pytest.fixture
 def sample_task() -> Task:
-    """Create a sample task for testing."""
     return Task(
         id="1.1",
         name="Create config module",
@@ -29,12 +23,7 @@ def sample_task() -> Task:
     )
 
 
-# --- Error classification ---
-
-
 class TestClassifyError:
-    """Tests for _classify_error method."""
-
     def test_import_error(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("ModuleNotFoundError: No module named 'foo'") == "import_error"
 
@@ -48,7 +37,7 @@ class TestClassifyError:
         assert agent._classify_error("NameError: name 'x' is not defined") == "name_error"
 
     def test_attribute_error(self, agent: SelfHealingAgent) -> None:
-        assert agent._classify_error("AttributeError: 'str' has no attribute 'foo'") == "name_error"
+        assert agent._classify_error("AttributeError: 'str' has no attribute 'foo'") == "attribute_error"
 
     def test_type_error(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("TypeError: expected str, got int") == "type_error"
@@ -62,6 +51,18 @@ class TestClassifyError:
     def test_test_failed(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("FAILED tests/test_foo.py::test_bar") == "test_failure"
 
+    def test_value_error(self, agent: SelfHealingAgent) -> None:
+        assert agent._classify_error("ValueError: too many values to unpack") == "value_error"
+
+    def test_key_error(self, agent: SelfHealingAgent) -> None:
+        assert agent._classify_error("KeyError: 'missing_key'") == "key_error"
+
+    def test_file_not_found_error(self, agent: SelfHealingAgent) -> None:
+        assert agent._classify_error("FileNotFoundError: [Errno 2] No such file") == "file_not_found"
+
+    def test_no_such_file_phrase(self, agent: SelfHealingAgent) -> None:
+        assert agent._classify_error("No such file or directory: 'foo.txt'") == "file_not_found"
+
     def test_unknown_error(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("Something completely unexpected happened") == "unknown_error"
 
@@ -71,18 +72,18 @@ class TestClassifyError:
     def test_case_insensitive(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("SYNTAXERROR: bad code") == "syntax_error"
 
-    def test_import_takes_priority_over_name(self, agent: SelfHealingAgent) -> None:
-        """Import check comes before name check, so 'import' in message wins."""
+    def test_nameerror_with_import_word_is_name_error(self, agent: SelfHealingAgent) -> None:
+        """NameError mentioning 'importing' is a name error, not an import error."""
         result = agent._classify_error("NameError while importing module")
-        # Contains both "import" and "nameerror" -- import check is first
-        assert result == "import_error"
+        assert result == "name_error"
 
-
-# --- Should attempt fix ---
+    def test_importerror_is_import_error(self, agent: SelfHealingAgent) -> None:
+        """ImportError and ModuleNotFoundError are import errors."""
+        assert agent._classify_error("ImportError: cannot import name 'Foo'") == "import_error"
+        assert agent._classify_error("ModuleNotFoundError: No module named 'bar'") == "import_error"
 
 
 class TestShouldAttemptFix:
-    """Tests for should_attempt_fix method."""
 
     def test_import_error_fixable(self, agent: SelfHealingAgent, sample_task: Task) -> None:
         assert agent.should_attempt_fix("ImportError: no module named foo", sample_task) is True
@@ -108,16 +109,13 @@ class TestShouldAttemptFix:
         assert agent.should_attempt_fix("", sample_task) is False
 
 
-# --- Fix prompt generation ---
-
-
 class TestBuildFixPrompt:
-    """Tests for _build_fix_prompt method."""
 
     def test_known_error_types_have_prompts(self, agent: SelfHealingAgent) -> None:
         known_types = [
-            "import_error", "syntax_error", "name_error",
-            "type_error", "indentation_error", "test_failure",
+            "import_error", "syntax_error", "name_error", "attribute_error",
+            "type_error", "value_error", "key_error", "file_not_found",
+            "indentation_error", "test_failure",
         ]
         for error_type in known_types:
             prompt = agent._build_fix_prompt(error_type)
@@ -133,11 +131,7 @@ class TestBuildFixPrompt:
         assert len(prompts) == 3
 
 
-# --- Fix parsing ---
-
-
 class TestParseFix:
-    """Tests for _parse_fix method."""
 
     def test_parses_standard_format(self, agent: SelfHealingAgent) -> None:
         content = """Here's the fix:
@@ -171,3 +165,58 @@ y = 2
     def test_no_match_returns_empty(self, agent: SelfHealingAgent) -> None:
         fixes = agent._parse_fix("no code blocks here")
         assert fixes == {}
+
+
+class TestExtractErrorLocation:
+
+    def test_extracts_python_traceback(self, agent: SelfHealingAgent) -> None:
+        error = '''Traceback (most recent call last):
+  File "src/config.py", line 42, in load_settings
+    return Settings()
+  File "src/config.py", line 10, in __init__
+    self.db_url = os.environ["DB_URL"]
+KeyError: 'DB_URL'
+'''
+        location = agent._extract_error_location(error)
+        assert "src/config.py:42" in location
+        assert "src/config.py:10" in location
+        assert "KeyError" in location
+
+    def test_extracts_pytest_failure(self, agent: SelfHealingAgent) -> None:
+        error = "FAILED tests/test_config.py::test_load - KeyError: 'DB_URL'"
+        location = agent._extract_error_location(error)
+        assert "FAILED tests/test_config.py" in location
+
+    def test_extracts_assertion_details(self, agent: SelfHealingAgent) -> None:
+        error = """E   assert 42 == 43
+E    +  where 42 = get_answer()"""
+        location = agent._extract_error_location(error)
+        assert "assert 42 == 43" in location
+
+    def test_empty_error_returns_empty(self, agent: SelfHealingAgent) -> None:
+        assert agent._extract_error_location("") == ""
+
+    def test_no_traceback_returns_empty(self, agent: SelfHealingAgent) -> None:
+        assert agent._extract_error_location("just a plain error message") == ""
+
+
+class TestNewErrorTypePrompts:
+
+    def test_attribute_error_has_prompt(self, agent: SelfHealingAgent) -> None:
+        prompt = agent._build_fix_prompt("attribute_error")
+        assert len(prompt) > 50
+        assert "attribute" in prompt.lower()
+
+    def test_value_error_has_prompt(self, agent: SelfHealingAgent) -> None:
+        prompt = agent._build_fix_prompt("value_error")
+        assert len(prompt) > 50
+
+    def test_key_error_has_prompt(self, agent: SelfHealingAgent) -> None:
+        prompt = agent._build_fix_prompt("key_error")
+        assert len(prompt) > 50
+        assert "key" in prompt.lower()
+
+    def test_file_not_found_has_prompt(self, agent: SelfHealingAgent) -> None:
+        prompt = agent._build_fix_prompt("file_not_found")
+        assert len(prompt) > 50
+        assert "file" in prompt.lower()
