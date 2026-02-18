@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sago Dashboard</title>
+<style>
+:root{
+  --bg:#0b0f15;--bg2:#131920;--bg3:#1b2230;--bg4:#252e3d;
+  --fg:#d6dce6;--fg2:#8c96a8;--fg3:#525e72;
+  --blue:#5ba0f7;--green:#4dca6a;--yellow:#e5a83b;--red:#ef5350;--purple:#b388ff;--cyan:#56d4dd;
+  --radius:12px;--radius-sm:8px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+
+/* ---- HEADER ---- */
+header{position:sticky;top:0;z-index:50;background:var(--bg2);border-bottom:1px solid var(--bg3);padding:12px 0}
+.header-inner{max-width:720px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:14px}
+.logo{font-size:12px;font-weight:800;letter-spacing:2px;color:var(--fg3)}.logo span{color:var(--blue)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--fg3);flex-shrink:0}
+.dot.running{background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 1.5s infinite}
+.dot.done{background:var(--blue)}.dot.error{background:var(--red);box-shadow:0 0 6px var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.h-project{font-size:13px;color:var(--fg2)}
+.h-spacer{flex:1}
+.h-stat{text-align:right;line-height:1.2}
+.h-stat-val{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.h-stat-label{font-size:9px;color:var(--fg3);text-transform:uppercase;letter-spacing:.4px}
+.h-divider{width:1px;height:28px;background:var(--bg3)}
+.h-progress{width:120px;display:flex;flex-direction:column;gap:4px}
+.h-progress-label{font-size:10px;color:var(--fg3);display:flex;justify-content:space-between}
+.h-progress-track{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.h-progress-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:2px;transition:width .5s ease;width:0}
+
+/* ---- FEED ---- */
+.feed{max-width:720px;margin:0 auto;padding:24px 24px 80px}
+.feed-empty{text-align:center;padding:60px 20px;color:var(--fg3)}
+.feed-empty .fe-icon{font-size:32px;margin-bottom:12px;opacity:.4}
+.feed-empty .fe-text{font-size:13px}
+
+/* ---- TASK CARD ---- */
+.task-card{background:var(--bg2);border:1px solid var(--bg3);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;transition:border-color .3s}
+.task-card.active{border-color:var(--blue)}
+.task-card.success{border-color:var(--green)}
+.task-card.failed{border-color:var(--red)}
+
+.tc-header{display:flex;align-items:center;gap:10px;padding:14px 18px;cursor:pointer;user-select:none}
+.tc-header:hover{background:var(--bg3)}
+.tc-indicator{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;font-weight:700}
+.tc-indicator.pending{background:var(--bg4);color:var(--fg3)}
+.tc-indicator.active{background:rgba(91,160,247,.15);color:var(--blue);animation:spin-ring 1.2s linear infinite}
+.tc-indicator.success{background:rgba(77,202,106,.12);color:var(--green)}
+.tc-indicator.failed{background:rgba(239,83,80,.12);color:var(--red)}
+@keyframes spin-ring{0%{box-shadow:inset 0 0 0 2px var(--blue)}25%{box-shadow:inset 2px 0 0 2px var(--blue)}50%{box-shadow:inset 0 2px 0 2px var(--blue)}75%{box-shadow:inset -2px 0 0 2px var(--blue)}100%{box-shadow:inset 0 0 0 2px var(--blue)}}
+.tc-info{flex:1;min-width:0}
+.tc-label{font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.tc-name{font-size:14px;font-weight:600;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-meta{margin-left:auto;text-align:right;flex-shrink:0}
+.tc-duration{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg2)}
+.tc-tokens{font-size:10px;color:var(--fg3)}
+
+.tc-body{display:none;border-top:1px solid var(--bg3)}
+.task-card.expanded .tc-body{display:block;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+/* ---- EVENT ROWS inside card ---- */
+.ev-group{padding:0 18px}
+.ev-group:last-child{padding-bottom:14px}
+
+/* File reads - compact pills */
+.ev-reads{display:flex;flex-wrap:wrap;gap:6px;padding:12px 18px}
+.ev-read-pill{display:flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(91,160,247,.08);border:1px solid rgba(91,160,247,.15);border-radius:20px;font-size:11px;color:var(--blue);cursor:pointer;transition:background .15s}
+.ev-read-pill:hover{background:rgba(91,160,247,.15)}
+.ev-read-pill .rp-icon{font-size:10px;opacity:.6}
+
+/* LLM call */
+.ev-llm{padding:12px 18px;border-top:1px solid var(--bg3)}
+.ev-llm-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ev-llm-icon{width:28px;height:28px;border-radius:var(--radius-sm);background:rgba(229,168,59,.1);color:var(--yellow);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.ev-llm-info{flex:1}
+.ev-llm-title{font-size:12px;font-weight:600}
+.ev-llm-stats{font-size:11px;color:var(--fg3);display:flex;gap:8px;margin-top:1px}
+.ev-llm-toggle{background:none;border:1px solid var(--bg4);color:var(--fg2);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s}
+.ev-llm-toggle:hover{background:var(--bg4);color:var(--fg)}
+.ev-llm-content{display:none;margin-top:10px}
+.ev-llm-content.show{display:block}
+.ev-llm-section{margin-bottom:10px}
+.ev-llm-label{font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px}
+.code-block{background:var(--bg);border:1px solid var(--bg3);border-radius:var(--radius-sm);padding:12px 14px;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:11.5px;line-height:1.6;color:var(--fg2);max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;tab-size:4}
+
+/* File writes */
+.ev-write{padding:12px 18px;border-top:1px solid var(--bg3)}
+.ev-write-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ev-write-icon{color:var(--green);font-size:14px}
+.ev-write-path{font-size:12px;font-weight:600}
+.ev-write-size{font-size:11px;color:var(--fg3)}
+.ev-write-content{display:none;margin-top:8px}
+.ev-write-content.show{display:block}
+
+/* Verify */
+.ev-verify{padding:12px 18px;border-top:1px solid var(--bg3)}
+.ev-verify-row{display:flex;align-items:center;gap:8px}
+.ev-verify-badge{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.3px}
+.ev-verify-badge.pass{background:rgba(77,202,106,.12);color:var(--green)}
+.ev-verify-badge.fail{background:rgba(239,83,80,.12);color:var(--red)}
+.ev-verify-cmd{font-family:monospace;font-size:11px;color:var(--fg2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-verify-dur{font-size:11px;color:var(--fg3)}
+.ev-verify-output{display:none;margin-top:8px}
+.ev-verify-output.show{display:block}
+
+/* Retry separator */
+.ev-retry{padding:8px 18px;border-top:1px solid var(--bg3);display:flex;align-items:center;gap:8px}
+.ev-retry-line{flex:1;height:1px;background:var(--yellow);opacity:.3}
+.ev-retry-label{font-size:10px;color:var(--yellow);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+
+/* ---- SLIDE-OVER for file detail ---- */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:auto}
+.panel{position:fixed;top:0;right:-500px;width:500px;max-width:90vw;height:100vh;background:var(--bg2);border-left:1px solid var(--bg3);z-index:101;transition:right .25s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+.panel.open{right:0}
+.panel-head{padding:18px 20px;border-bottom:1px solid var(--bg3);display:flex;align-items:center;justify-content:space-between}
+.panel-head h3{font-size:15px;font-weight:600}
+.panel-close{background:none;border:none;color:var(--fg3);font-size:22px;cursor:pointer;padding:2px 8px;border-radius:4px;line-height:1}
+.panel-close:hover{background:var(--bg3);color:var(--fg)}
+.panel-body{flex:1;overflow-y:auto;padding:20px}
+.panel-section{margin-bottom:20px}
+.panel-section h4{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg3);margin-bottom:8px;font-weight:600}
+.panel-access{padding:8px 0;border-bottom:1px solid var(--bg3);display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.panel-access:last-child{border:none}
+.pa-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;flex-shrink:0}
+.pa-badge.read{background:rgba(91,160,247,.12);color:var(--blue)}
+.pa-badge.write{background:rgba(77,202,106,.12);color:var(--green)}
+.pa-meta{color:var(--fg3);font-size:11px}
+
+/* ---- TABS ---- */
+.tab-bar{max-width:720px;margin:0 auto;padding:16px 24px 0;display:flex;gap:4px}
+.tab-btn{background:none;border:none;color:var(--fg3);font-size:12px;font-weight:600;padding:8px 16px;border-radius:var(--radius-sm) var(--radius-sm) 0 0;cursor:pointer;transition:all .15s;letter-spacing:.3px;position:relative}
+.tab-btn:hover{color:var(--fg2);background:var(--bg2)}
+.tab-btn.active{color:var(--fg);background:var(--bg2)}
+.tab-btn.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--blue);border-radius:1px}
+.tab-btn .tab-count{margin-left:6px;background:var(--bg4);padding:1px 6px;border-radius:8px;font-size:10px;font-weight:500;color:var(--fg3)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ---- LOG VIEW ---- */
+.log-view{max-width:720px;margin:0 auto;padding:0 24px 80px}
+.log-table{width:100%;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;font-size:11.5px;border-collapse:collapse}
+.log-row{border-bottom:1px solid var(--bg3);cursor:pointer;transition:background .1s}
+.log-row:hover{background:var(--bg2)}
+.log-row td{padding:7px 8px;vertical-align:top;white-space:nowrap}
+.log-row td:last-child{white-space:normal;word-break:break-word}
+.log-time{color:var(--fg3);width:68px;font-variant-numeric:tabular-nums}
+.log-agent{width:110px;overflow:hidden;text-overflow:ellipsis;color:var(--purple)}
+.log-type{width:85px;font-weight:600}
+.log-type.llm_call{color:var(--yellow)}
+.log-type.file_read{color:var(--blue)}
+.log-type.file_write{color:var(--green)}
+.log-type.verify_run{color:var(--purple)}
+.log-type.task_start,.log-type.task_end{color:var(--cyan)}
+.log-type.error{color:var(--red)}
+.log-type.workflow_start,.log-type.workflow_end{color:var(--fg2)}
+.log-type.cache_hit,.log-type.cache_miss{color:var(--fg3)}
+.log-type.compression{color:var(--fg3)}
+.log-detail{color:var(--fg2)}
+.log-detail-expanded{display:none;padding:8px 8px 12px 186px;background:var(--bg2);border-bottom:1px solid var(--bg3)}
+.log-detail-expanded.show{display:block}
+.log-detail-grid{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.log-detail-stat{font-size:11px}.log-detail-stat .lds-val{font-weight:600;color:var(--fg)}.log-detail-stat .lds-label{color:var(--fg3)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo"><span>S</span>AGO</div>
+    <div class="dot" id="dot"></div>
+    <div class="h-project" id="project"></div>
+    <div class="h-spacer"></div>
+    <div class="h-progress" id="hProgress" style="display:none">
+      <div class="h-progress-label"><span id="hProgressLabel">0 / 0</span><span id="hProgressPct">0%</span></div>
+      <div class="h-progress-track"><div class="h-progress-fill" id="hProgressFill"></div></div>
+    </div>
+    <div class="h-divider"></div>
+    <div class="h-stat"><div class="h-stat-val" id="hTokens">0</div><div class="h-stat-label">tokens</div></div>
+    <div class="h-divider"></div>
+    <div class="h-stat"><div class="h-stat-val" id="hElapsed">--</div><div class="h-stat-label">elapsed</div></div>
+  </div>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="feed" onclick="switchTab('feed')">Feed <span class="tab-count" id="feedCount">0</span></button>
+  <button class="tab-btn" data-tab="log" onclick="switchTab('log')">Log <span class="tab-count" id="logCount">0</span></button>
+</div>
+
+<div class="tab-panel active" id="panel-feed">
+  <div class="feed" id="feed">
+    <div class="feed-empty" id="feedEmpty">
+      <div class="fe-icon">&#x23F3;</div>
+      <div class="fe-text">Waiting for events...</div>
+    </div>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-log">
+  <div class="log-view">
+    <table class="log-table"><tbody id="logBody"></tbody></table>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+<div class="panel" id="panel">
+  <div class="panel-head"><h3 id="panelTitle"></h3><button class="panel-close" onclick="closePanel()">&times;</button></div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<script>
+(function(){
+  let cursor=0,totalTokens=0,workflowStart=null,workflowDone=false,timer=null;
+  let taskTotal=0,taskDone=0,taskFailed=0;
+  const fileHistory={};
+
+  // Cards: keyed by task_id or '_planning'
+  const cards={};
+  let currentCardId=null; // which card events go into
+  let lastLLMAgentForRetry={}; // track retries per task
+
+  function fmt(n){if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'k';return String(n)}
+  function fmtB(b){if(b>=1048576)return(b/1048576).toFixed(1)+' MB';if(b>=1024)return(b/1024).toFixed(1)+' KB';return b+' B'}
+  function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+  function timeStr(iso){try{return new Date(iso).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}catch(e){return''}}
+
+  function updateElapsed(){
+    if(!workflowStart)return;
+    const s=Math.round((Date.now()-workflowStart)/1000);
+    const m=Math.floor(s/60),sec=s%60;
+    document.getElementById('hElapsed').textContent=m>0?(m+'m '+sec+'s'):(sec+'s');
+  }
+
+  function updateProgress(){
+    const pct=taskTotal>0?Math.round(taskDone/taskTotal*100):0;
+    document.getElementById('hProgressLabel').textContent=taskDone+' / '+taskTotal;
+    document.getElementById('hProgressPct').textContent=pct+'%';
+    document.getElementById('hProgressFill').style.width=pct+'%';
+    if(taskTotal>0)document.getElementById('hProgress').style.display='';
+  }
+
+  // ---- CARD MANAGEMENT ----
+  function ensureCard(id,label,name){
+    if(cards[id])return cards[id];
+    document.getElementById('feedEmpty').style.display='none';
+
+    const card=document.createElement('div');
+    card.className='task-card expanded active';
+    card.id='card-'+id;
+
+    card.innerHTML=
+      '<div class="tc-header" onclick="toggleCard(\''+id+'\')">'+
+        '<div class="tc-indicator active" id="ind-'+id+'">&#x25CB;</div>'+
+        '<div class="tc-info"><div class="tc-label">'+esc(label)+'</div><div class="tc-name">'+esc(name)+'</div></div>'+
+        '<div class="tc-meta"><div class="tc-duration" id="dur-'+id+'"></div><div class="tc-tokens" id="tok-'+id+'"></div></div>'+
+      '</div>'+
+      '<div class="tc-body" id="body-'+id+'"></div>';
+
+    document.getElementById('feed').appendChild(card);
+    cards[id]={el:card,body:card.querySelector('.tc-body'),tokens:0,llmCount:0,reads:[],writes:[],verifies:[],retryCount:0};
+    return cards[id];
+  }
+
+  window.toggleCard=function(id){
+    const el=document.getElementById('card-'+id);
+    if(el)el.classList.toggle('expanded');
+  };
+
+  function finalizeCard(id,success,durationS){
+    const c=cards[id];if(!c)return;
+    const el=c.el;
+    el.classList.remove('active');
+    el.classList.add(success?'success':'failed');
+    const ind=document.getElementById('ind-'+id);
+    if(ind){ind.className='tc-indicator '+(success?'success':'failed');ind.innerHTML=success?'&#x2713;':'&#x2717;';}
+    if(durationS!=null){document.getElementById('dur-'+id).textContent=durationS.toFixed(1)+'s';}
+    // Collapse all except current (keep last expanded)
+  }
+
+  // ---- ADD EVENTS TO CARD ----
+  function addReads(cardId,data){
+    const c=cards[cardId];if(!c)return;
+    c.reads.push(data);
+    let container=c.body.querySelector('.ev-reads');
+    if(!container){container=document.createElement('div');container.className='ev-reads';c.body.appendChild(container);}
+    const pill=document.createElement('span');
+    pill.className='ev-read-pill';
+    pill.innerHTML='<span class="rp-icon">&#x1F441;</span>'+esc(data.path||'')+' <span style="opacity:.5">'+fmtB(data.size_bytes||0)+'</span>';
+    pill.onclick=function(e){e.stopPropagation();showFilePanel(data.path)};
+    container.appendChild(pill);
+    // Track file history
+    if(!fileHistory[data.path])fileHistory[data.path]=[];
+    fileHistory[data.path].push({type:'file_read',agent:data._agent,timestamp:data._ts,size_bytes:data.size_bytes||0,content_preview:data.content_preview||''});
+  }
+
+  function addLLM(cardId,data,timestamp){
+    const c=cards[cardId];if(!c)return;
+    c.tokens+=(data.total_tokens||0);
+    c.llmCount++;
+    document.getElementById('tok-'+cardId).textContent=fmt(c.tokens)+' tokens';
+
+    const section=document.createElement('div');
+    section.className='ev-llm';
+    const llmId='llm-'+cardId+'-'+c.llmCount;
+
+    section.innerHTML=
+      '<div class="ev-llm-header">'+
+        '<div class="ev-llm-icon">&#x2728;</div>'+
+        '<div class="ev-llm-info"><div class="ev-llm-title">LLM Call'+(c.llmCount>1?' #'+c.llmCount:'')+'</div>'+
+          '<div class="ev-llm-stats"><span>'+(data.model||'')+'</span><span>'+fmt(data.prompt_tokens||0)+' &rarr; '+fmt(data.completion_tokens||0)+' tokens</span><span>'+(data.duration_s||0).toFixed(1)+'s</span></div>'+
+        '</div>'+
+        '<button class="ev-llm-toggle" onclick="event.stopPropagation();document.getElementById(\''+llmId+'\').classList.toggle(\'show\');this.textContent=this.textContent===\'Show\'?\'Hide\':\'Show\'">Show</button>'+
+      '</div>'+
+      '<div class="ev-llm-content" id="'+llmId+'">'+
+        (data.prompt_preview?'<div class="ev-llm-section"><div class="ev-llm-label">Prompt</div><div class="code-block">'+esc(data.prompt_preview)+'</div></div>':'')+
+        (data.response_preview?'<div class="ev-llm-section"><div class="ev-llm-label">Response</div><div class="code-block">'+esc(data.response_preview)+'</div></div>':'')+
+      '</div>';
+
+    c.body.appendChild(section);
+  }
+
+  function addWrite(cardId,data){
+    const c=cards[cardId];if(!c)return;
+    c.writes.push(data);
+    if(!fileHistory[data.path])fileHistory[data.path]=[];
+    fileHistory[data.path].push({type:'file_write',agent:data._agent,timestamp:data._ts,size_bytes:data.size_bytes||0,content_preview:data.content_preview||''});
+
+    const section=document.createElement('div');
+    section.className='ev-write';
+    const writeId='write-'+cardId+'-'+c.writes.length;
+
+    section.innerHTML=
+      '<div class="ev-write-header">'+
+        '<span class="ev-write-icon">&#x270E;</span>'+
+        '<span class="ev-write-path" style="cursor:pointer" onclick="event.stopPropagation();showFilePanel(\''+esc(data.path)+'\')">'+esc(data.path||'')+'</span>'+
+        '<span class="ev-write-size">'+fmtB(data.size_bytes||0)+'</span>'+
+        (data.content_preview?'<button class="ev-llm-toggle" style="margin-left:auto" onclick="event.stopPropagation();document.getElementById(\''+writeId+'\').classList.toggle(\'show\');this.textContent=this.textContent===\'Show\'?\'Hide\':\'Show\'">Show</button>':'')+
+      '</div>'+
+      (data.content_preview?'<div class="ev-write-content" id="'+writeId+'"><div class="code-block">'+esc(data.content_preview)+'</div></div>':'');
+
+    c.body.appendChild(section);
+  }
+
+  function addVerify(cardId,data){
+    const c=cards[cardId];if(!c)return;
+    c.verifies.push(data);
+
+    const section=document.createElement('div');
+    section.className='ev-verify';
+    const vId='verify-'+cardId+'-'+c.verifies.length;
+    const hasOutput=(data.stdout||data.stderr);
+
+    section.innerHTML=
+      '<div class="ev-verify-row">'+
+        '<span class="ev-verify-badge '+(data.success?'pass':'fail')+'">'+(data.success?'PASS':'FAIL')+'</span>'+
+        '<span class="ev-verify-cmd">'+esc(data.command||'')+'</span>'+
+        '<span class="ev-verify-dur">'+(data.duration_s||0).toFixed(1)+'s</span>'+
+        (hasOutput?'<button class="ev-llm-toggle" onclick="event.stopPropagation();document.getElementById(\''+vId+'\').classList.toggle(\'show\');this.textContent=this.textContent===\'Show\'?\'Hide\':\'Show\'">Show</button>':'')+
+      '</div>'+
+      (hasOutput?'<div class="ev-verify-output" id="'+vId+'">'+
+        (data.stdout?'<div style="margin-top:6px"><div class="ev-llm-label">stdout</div><div class="code-block" style="max-height:150px">'+esc(data.stdout)+'</div></div>':'')+
+        (data.stderr?'<div style="margin-top:6px"><div class="ev-llm-label">stderr</div><div class="code-block" style="max-height:150px;color:var(--red)">'+esc(data.stderr)+'</div></div>':'')+
+      '</div>':'');
+
+    c.body.appendChild(section);
+  }
+
+  function addRetryMarker(cardId){
+    const c=cards[cardId];if(!c)return;
+    c.retryCount++;
+    const marker=document.createElement('div');
+    marker.className='ev-retry';
+    marker.innerHTML='<div class="ev-retry-line"></div><span class="ev-retry-label">Retry #'+c.retryCount+'</span><div class="ev-retry-line"></div>';
+    c.body.appendChild(marker);
+  }
+
+  function addError(cardId,data){
+    const c=cards[cardId];if(!c)return;
+    const section=document.createElement('div');
+    section.className='ev-verify';
+    section.innerHTML='<div class="ev-verify-row"><span class="ev-verify-badge fail">ERROR</span><span class="ev-verify-cmd" style="color:var(--red)">'+esc(data.message||'')+'</span></div>';
+    c.body.appendChild(section);
+  }
+
+  // ---- FILE PANEL ----
+  window.showFilePanel=function(path){
+    document.getElementById('panelTitle').textContent=path;
+    const hist=(fileHistory[path]||[]).slice().reverse();
+    let html='<div class="panel-section"><h4>Access History ('+hist.length+')</h4>';
+    hist.forEach(function(h){
+      const isWrite=h.type==='file_write';
+      html+='<div class="panel-access"><span class="pa-badge '+(isWrite?'write':'read')+'">'+(isWrite?'WRITE':'READ')+'</span><div><div>'+esc(h.agent||'')+'</div><div class="pa-meta">'+timeStr(h.timestamp)+' &middot; '+fmtB(h.size_bytes||0)+'</div></div></div>';
+    });
+    html+='</div>';
+    const last=hist.find(function(h){return h.content_preview});
+    if(last)html+='<div class="panel-section"><h4>Latest Content</h4><div class="code-block">'+esc(last.content_preview)+'</div></div>';
+    document.getElementById('panelBody').innerHTML=html;
+    document.getElementById('panel').classList.add('open');
+    document.getElementById('overlay').classList.add('open');
+  };
+  window.closePanel=function(){document.getElementById('panel').classList.remove('open');document.getElementById('overlay').classList.remove('open')};
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closePanel()});
+
+  // ---- PROCESS ----
+  // Track whether we've seen an LLM call in the current task+attempt, so we know when a retry starts
+  let currentTaskLLMSeen=false;
+
+  let feedEventCount=0;
+  function bumpFeedCount(){
+    feedEventCount++;
+    document.getElementById('feedCount').textContent=feedEventCount;
+  }
+
+  function processEvent(evt){
+    // Always add to log view
+    addLogRow(evt);
+
+    const t=evt.event_type,d=evt.data||{},agent=evt.agent||'';
+
+    // Workflow lifecycle
+    if(t==='workflow_start'){
+      workflowStart=Date.now();
+      document.getElementById('dot').className='dot running';
+      if(d.project_path)document.getElementById('project').textContent=d.project_path.split('/').pop()||'';
+      if(!timer)timer=setInterval(updateElapsed,1000);
+      // Create planning card
+      ensureCard('_planning','Planning Phase','Generating plan...');
+      currentCardId='_planning';
+      bumpFeedCount();
+      return;
+    }
+    if(t==='workflow_end'){
+      workflowDone=true;
+      document.getElementById('dot').className='dot '+(d.success?'done':'error');
+      if(timer){clearInterval(timer);timer=null}
+      updateElapsed();
+      // Finalize planning card if still active
+      if(cards['_planning']){
+        const pEl=cards['_planning'].el;
+        if(pEl.classList.contains('active'))finalizeCard('_planning',d.success,d.duration_s);
+      }
+      return;
+    }
+
+    // Task lifecycle
+    if(t==='task_start'){
+      // Finalize planning card
+      if(cards['_planning']&&cards['_planning'].el.classList.contains('active')){
+        finalizeCard('_planning',true,null);
+        cards['_planning'].el.classList.remove('expanded');
+      }
+      // Collapse previous task card
+      if(currentCardId&&currentCardId!=='_planning'&&cards[currentCardId]){
+        cards[currentCardId].el.classList.remove('expanded');
+      }
+      const tid=d.task_id||('task-'+Date.now());
+      ensureCard(tid,'Task '+(d.task_id||''),d.task_name||'');
+      currentCardId=tid;
+      currentTaskLLMSeen=false;
+      return;
+    }
+    if(t==='task_end'){
+      const tid=d.task_id||currentCardId;
+      if(d.success)taskDone++;else taskFailed++;
+      updateProgress();
+      finalizeCard(tid,d.success,d.duration_s);
+      return;
+    }
+
+    // Route events to current card
+    const cid=currentCardId||'_planning';
+
+    if(t==='file_read'){
+      d._agent=agent;d._ts=evt.timestamp;
+      addReads(cid,d);bumpFeedCount();
+    }
+    if(t==='file_write'){
+      d._agent=agent;d._ts=evt.timestamp;
+      addWrite(cid,d);bumpFeedCount();
+    }
+    if(t==='llm_call'){
+      // Detect retry: if we already had an LLM call in this task, this is a retry
+      if(currentTaskLLMSeen&&cid!=='_planning'){
+        addRetryMarker(cid);
+      }
+      currentTaskLLMSeen=true;
+      totalTokens+=(d.total_tokens||0);
+      document.getElementById('hTokens').textContent=fmt(totalTokens);
+      if(cards[cid])cards[cid].tokens+=(d.total_tokens||0);
+      // Undo the double-count from addLLM
+      if(cards[cid])cards[cid].tokens-=(d.total_tokens||0);
+      addLLM(cid,d,evt.timestamp);bumpFeedCount();
+    }
+    if(t==='verify_run'){
+      addVerify(cid,d);bumpFeedCount();
+    }
+    if(t==='error'){
+      addError(cid,d);bumpFeedCount();
+    }
+    if(t==='cache_hit'||t==='cache_miss'){
+      // Could show as a small note but skip for now to keep clean
+    }
+    if(t==='compression'){
+      // Minor event, skip visual
+    }
+  }
+
+  // ---- TAB SWITCHING ----
+  let logEventCount=0;
+  window.switchTab=function(tab){
+    document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.toggle('active',b.dataset.tab===tab)});
+    document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.toggle('active',p.id==='panel-'+tab)});
+  };
+
+  // ---- LOG RENDERING ----
+  function logSummary(evt){
+    const t=evt.event_type,d=evt.data||{};
+    if(t==='workflow_start')return'Project: '+(d.project_path||'').split('/').pop();
+    if(t==='workflow_end')return(d.success?'Completed':'Failed')+' &middot; '+(d.total_tasks||0)+' tasks &middot; '+(d.duration_s||0).toFixed(1)+'s';
+    if(t==='task_start')return(d.task_id||'')+' '+esc(d.task_name||'');
+    if(t==='task_end')return(d.task_id||'')+' '+(d.success?'&#x2713; pass':'&#x2717; fail')+' '+(d.duration_s||0).toFixed(1)+'s';
+    if(t==='llm_call')return(d.model||'')+' &middot; '+fmt(d.total_tokens||0)+' tok &middot; '+(d.duration_s||0).toFixed(1)+'s';
+    if(t==='file_read')return esc(d.path||'')+' ('+fmtB(d.size_bytes||0)+')';
+    if(t==='file_write')return esc(d.path||'')+' ('+fmtB(d.size_bytes||0)+')';
+    if(t==='verify_run')return(d.success?'&#x2713;':'&#x2717;')+' '+esc(d.command||'')+' '+(d.duration_s||0).toFixed(1)+'s';
+    if(t==='cache_hit')return'Task '+(d.task_id||'')+' cached';
+    if(t==='cache_miss')return'Task '+(d.task_id||'')+' not cached';
+    if(t==='compression')return'Saved '+(d.savings_pct||0)+'%';
+    if(t==='error')return esc(d.message||d.error_type||'');
+    return JSON.stringify(d).substring(0,120);
+  }
+
+  function logExpandContent(evt){
+    const t=evt.event_type,d=evt.data||{};
+    let html='<div class="log-detail-grid">';
+    // Show key stats
+    Object.keys(d).forEach(function(k){
+      if(k==='prompt_preview'||k==='response_preview'||k==='content_preview'||k==='stdout'||k==='stderr')return;
+      if(k.startsWith('_'))return;
+      const v=d[k];if(v===null||v===undefined||v==='')return;
+      html+='<div class="log-detail-stat"><span class="lds-label">'+esc(k)+' </span><span class="lds-val">'+esc(String(v))+'</span></div>';
+    });
+    html+='</div>';
+    // Show large text blocks
+    if(d.prompt_preview)html+='<div style="margin-top:6px"><div class="ev-llm-label">Prompt</div><div class="code-block">'+esc(d.prompt_preview)+'</div></div>';
+    if(d.response_preview)html+='<div style="margin-top:6px"><div class="ev-llm-label">Response</div><div class="code-block">'+esc(d.response_preview)+'</div></div>';
+    if(d.content_preview)html+='<div style="margin-top:6px"><div class="ev-llm-label">Content</div><div class="code-block">'+esc(d.content_preview)+'</div></div>';
+    if(d.stdout)html+='<div style="margin-top:6px"><div class="ev-llm-label">stdout</div><div class="code-block" style="max-height:150px">'+esc(d.stdout)+'</div></div>';
+    if(d.stderr)html+='<div style="margin-top:6px"><div class="ev-llm-label">stderr</div><div class="code-block" style="max-height:150px;color:var(--red)">'+esc(d.stderr)+'</div></div>';
+    return html;
+  }
+
+  function addLogRow(evt){
+    logEventCount++;
+    document.getElementById('logCount').textContent=logEventCount;
+    const tbody=document.getElementById('logBody');
+    const rowId='logrow-'+logEventCount;
+    const detailId='logdetail-'+logEventCount;
+
+    const tr=document.createElement('tr');
+    tr.className='log-row';
+    tr.onclick=function(){
+      const el=document.getElementById(detailId);
+      if(el)el.classList.toggle('show');
+    };
+    tr.innerHTML=
+      '<td class="log-time">'+timeStr(evt.timestamp)+'</td>'+
+      '<td class="log-agent">'+esc(evt.agent||'')+'</td>'+
+      '<td class="log-type '+evt.event_type+'">'+esc(evt.event_type)+'</td>'+
+      '<td class="log-detail">'+logSummary(evt)+'</td>';
+
+    // Insert at top (most recent first)
+    if(tbody.firstChild)tbody.insertBefore(tr,tbody.firstChild);else tbody.appendChild(tr);
+
+    // Expandable detail row
+    const detailTr=document.createElement('tr');
+    detailTr.innerHTML='<td colspan="4" class="log-detail-expanded" id="'+detailId+'">'+logExpandContent(evt)+'</td>';
+    // Insert detail right after the row
+    if(tr.nextSibling)tbody.insertBefore(detailTr,tr.nextSibling);else tbody.appendChild(detailTr);
+  }
+
+  // ---- POLL ----
+  function poll(){
+    fetch('/api/events?after='+cursor)
+      .then(function(r){return r.json()})
+      .then(function(data){
+        cursor=data.cursor||cursor;
+        if(data.total_tasks&&data.total_tasks>taskTotal){taskTotal=data.total_tasks;updateProgress();}
+        (data.events||[]).forEach(processEvent);
+      })
+      .catch(function(){})
+      .finally(function(){setTimeout(poll,500)});
+  }
+  poll();
+})();
+</script>
+</body>
+</html>
