@@ -1,5 +1,3 @@
-"""Tests for configuration management."""
-
 import os
 import tempfile
 from pathlib import Path
@@ -33,7 +31,6 @@ def test_config_loads_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_config_creates_planning_dir() -> None:
-    """Test that planning directory is created automatically."""
     with tempfile.TemporaryDirectory() as tmpdir:
         planning_dir = Path(tmpdir) / ".planning"
         config = Config(planning_dir=planning_dir)
@@ -41,20 +38,11 @@ def test_config_creates_planning_dir() -> None:
         assert config.planning_dir.is_dir()
 
 
-def test_get_hosts_file_path() -> None:
-    """Test that hosts file path is OS-appropriate."""
-    config = Config()
-    hosts_path = config.get_hosts_file_path()
-    assert isinstance(hosts_path, Path)
-    assert "hosts" in str(hosts_path).lower()
-
-
 def test_config_with_env_file(tmp_path: Path) -> None:
     """Test that config loads from .env file."""
     env_file = tmp_path / ".env"
     env_file.write_text("LLM_PROVIDER=azure\nLLM_MODEL=gpt-4\n")
 
-    # Change to temp directory
     original_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)

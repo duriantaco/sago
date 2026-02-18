@@ -1,20 +1,14 @@
-"""Tests for LLM client."""
-
 from unittest.mock import MagicMock, patch
-
 import pytest
-
 from sago.utils.llm import LLMClient, LLMError
 
 
 @pytest.fixture
 def llm_client() -> LLMClient:
-    """Create an LLM client for testing."""
     return LLMClient(model="gpt-4", api_key="test-key")
 
 
 def test_llm_client_initialization() -> None:
-    """Test that LLM client initializes correctly."""
     client = LLMClient(
         model="gpt-4",
         api_key="test-key",
@@ -30,8 +24,6 @@ def test_llm_client_initialization() -> None:
 
 @patch("litellm.completion")
 def test_llm_client_calls_api(mock_completion: MagicMock, llm_client: LLMClient) -> None:
-    """Test that LLM client makes API calls."""
-    # Mock response
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
     mock_response.choices[0].message.content = "Test response"
@@ -51,13 +43,10 @@ def test_llm_client_calls_api(mock_completion: MagicMock, llm_client: LLMClient)
     assert result["usage"]["total_tokens"] == 30
     assert result["finish_reason"] == "stop"
 
-    # Verify API was called
     mock_completion.assert_called_once()
 
 
 def test_validate_messages(llm_client: LLMClient) -> None:
-    """Test message validation."""
-    # Valid messages
     valid = [
         {"role": "system", "content": "You are helpful"},
         {"role": "user", "content": "Hello"},
@@ -81,15 +70,12 @@ def test_validate_messages(llm_client: LLMClient) -> None:
 
 
 def test_count_tokens(llm_client: LLMClient) -> None:
-    """Test token counting."""
     text = "This is a test message for token counting."
 
-    # Should return a positive integer
     count = llm_client.count_tokens(text)
     assert isinstance(count, int)
     assert count > 0
 
-    # Longer text should have more tokens
     long_text = text * 10
     long_count = llm_client.count_tokens(long_text)
     assert long_count > count
@@ -125,7 +111,6 @@ def test_llm_client_custom_temperature(
     messages = [{"role": "user", "content": "Hello"}]
     llm_client.chat_completion(messages, temperature=0.8)
 
-    # Check that custom temperature was used
     call_args = mock_completion.call_args
     assert call_args[1]["temperature"] == 0.8
 
@@ -133,7 +118,6 @@ def test_llm_client_custom_temperature(
 @patch("litellm.completion")
 def test_llm_client_streaming(mock_completion: MagicMock, llm_client: LLMClient) -> None:
     """Test streaming completion."""
-    # Mock streaming response
     chunk1 = MagicMock()
     chunk1.choices = [MagicMock()]
     chunk1.choices[0].delta.content = "Hello "

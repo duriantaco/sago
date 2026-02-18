@@ -1,20 +1,16 @@
-"""Tests for cost estimation."""
-
 import pytest
 
 from sago.core.parser import Task
-from sago.utils.cost_estimator import CostEstimate, CostEstimator
+from sago.utils.cost_estimator import CostEstimator
 
 
 @pytest.fixture
 def estimator() -> CostEstimator:
-    """Create a CostEstimator with known model."""
     return CostEstimator(model="gpt-4o")
 
 
 @pytest.fixture
 def sample_tasks() -> list[Task]:
-    """Create sample tasks for estimation."""
     return [
         Task(
             id="1.1", name="Task A", files=["a.py"],
@@ -31,9 +27,6 @@ def sample_tasks() -> list[Task]:
     ]
 
 
-# --- Initialization ---
-
-
 def test_known_model_uses_correct_pricing(estimator: CostEstimator) -> None:
     assert estimator.cost_rates == {"input": 2.50, "output": 10.00}
 
@@ -42,8 +35,6 @@ def test_unknown_model_falls_back_to_gpt4o() -> None:
     est = CostEstimator(model="unknown-model-xyz")
     assert est.cost_rates == CostEstimator.MODEL_COSTS["gpt-4o"]
 
-
-# --- Workflow estimation ---
 
 
 def test_estimate_returns_correct_task_count(
@@ -99,9 +90,6 @@ def test_verification_adds_time(
     assert max_verify > max_no_verify
 
 
-# --- Phase breakdown ---
-
-
 def test_breakdown_by_phase(
     estimator: CostEstimator, sample_tasks: list[Task]
 ) -> None:
@@ -121,16 +109,12 @@ def test_phase_costs_sum_to_total(
     assert abs(phase_cost_sum - estimate.estimated_cost_usd) < 0.001
 
 
-# --- Single task estimation ---
-
 
 def test_estimate_single_task(estimator: CostEstimator, sample_tasks: list[Task]) -> None:
     estimate = estimator.estimate_task(sample_tasks[0])
     assert estimate.total_tasks == 1
     assert estimate.estimated_cost_usd > 0
 
-
-# --- Model comparison ---
 
 
 def test_model_comparison_covers_all_models(
@@ -146,9 +130,6 @@ def test_cheaper_model_costs_less(sample_tasks: list[Task]) -> None:
     est = CostEstimator(model="gpt-4o")
     comparison = est.get_model_comparison(sample_tasks)
     assert comparison["gpt-4o-mini"].estimated_cost_usd < comparison["gpt-4o"].estimated_cost_usd
-
-
-# --- String representation ---
 
 
 def test_cost_estimate_str(

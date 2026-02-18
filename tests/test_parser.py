@@ -1,20 +1,14 @@
-"""Tests for markdown and XML parsing."""
-
 from pathlib import Path
-
 import pytest
-
-from sago.core.parser import MarkdownParser, Phase, Requirement, Task
+from sago.core.parser import MarkdownParser, Phase, Task
 
 
 @pytest.fixture
 def parser() -> MarkdownParser:
-    """Create a MarkdownParser instance."""
     return MarkdownParser()
 
 
 def test_parse_xml_tasks(parser: MarkdownParser) -> None:
-    """Test parsing XML tasks from PLAN.md content."""
     content = """
 # PLAN.md
 
@@ -88,7 +82,6 @@ def test_parse_xml_tasks_no_xml(parser: MarkdownParser) -> None:
 
 
 def test_parse_xml_tasks_invalid_xml(parser: MarkdownParser) -> None:
-    """Test that parser raises error for invalid XML."""
     content = "```xml\n<phases><phase>Missing closing tag\n```"
 
     with pytest.raises(ValueError, match="Invalid XML"):
@@ -153,7 +146,6 @@ def test_parse_roadmap(parser: MarkdownParser) -> None:
 
 
 def test_parse_state(parser: MarkdownParser) -> None:
-    """Test parsing state from STATE.md."""
     content = """
 ## STATE.md
 

@@ -1,26 +1,22 @@
-"""Tests for orchestrator."""
-
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from sago.agents.base import AgentResult, AgentStatus
 from sago.agents.orchestrator import Orchestrator, TaskExecution, WorkflowResult
 from sago.core.config import Config
-from sago.core.parser import Phase, Task
+from sago.core.parser import Task
 
 
 @pytest.fixture
 def mock_config(tmp_path: Path) -> Config:
-    """Create mock config."""
     return Config()
 
 
 @pytest.fixture
 def sample_plan_content() -> str:
-    """Create sample PLAN.md content."""
     return """# PLAN.md
 
 ```xml
@@ -51,12 +47,10 @@ def sample_plan_content() -> str:
 
 @pytest.fixture
 def orchestrator(mock_config: Config) -> Orchestrator:
-    """Create orchestrator instance."""
     return Orchestrator(config=mock_config)
 
 
 def test_orchestrator_initialization(orchestrator: Orchestrator):
-    """Test orchestrator initialization."""
     assert orchestrator is not None
     assert orchestrator.planner is not None
     assert orchestrator.executor is not None
@@ -65,7 +59,6 @@ def test_orchestrator_initialization(orchestrator: Orchestrator):
 
 
 def test_task_execution_success():
-    """Test TaskExecution with successful execution."""
     task = Task(
         id="1.1",
         name="Test task",
@@ -103,7 +96,6 @@ def test_task_execution_success():
 
 
 def test_task_execution_failure():
-    """Test TaskExecution with failure."""
     task = Task(
         id="1.1",
         name="Test task",
@@ -156,7 +148,7 @@ async def test_run_workflow_no_plan(orchestrator: Orchestrator, tmp_path: Path):
     """Test workflow fails when PLAN.md doesn't exist."""
     result = await orchestrator.run_workflow(
         project_path=tmp_path,
-        plan=False,  # Don't generate plan
+        plan=False,
         execute=True,
     )
 
@@ -168,8 +160,6 @@ async def test_run_workflow_no_plan(orchestrator: Orchestrator, tmp_path: Path):
 async def test_run_workflow_with_plan_generation(
     orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
 ):
-    """Test workflow with plan generation."""
-    # Mock planner to return success
     mock_result = AgentResult(
         status=AgentStatus.SUCCESS,
         output="Plan generated",
@@ -179,14 +169,12 @@ async def test_run_workflow_with_plan_generation(
     with patch.object(orchestrator.planner, "execute", new_callable=AsyncMock) as mock_planner:
         mock_planner.return_value = mock_result
 
-        # Create PLAN.md after planner runs
         def create_plan(*args, **kwargs):
             (tmp_path / "PLAN.md").write_text(sample_plan_content)
             return mock_result
 
         mock_planner.side_effect = create_plan
 
-        # Mock executor and verifier
         with patch.object(
             orchestrator.executor, "execute", new_callable=AsyncMock
         ) as mock_executor, patch.object(
@@ -215,11 +203,8 @@ async def test_run_workflow_with_plan_generation(
 async def test_run_workflow_plan_exists(
     orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
 ):
-    """Test workflow when PLAN.md already exists."""
-    # Create PLAN.md
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    # Mock executor and verifier
     with patch.object(
         orchestrator.executor, "execute", new_callable=AsyncMock
     ) as mock_executor, patch.object(
@@ -235,19 +220,18 @@ async def test_run_workflow_plan_exists(
 
         result = await orchestrator.run_workflow(
             project_path=tmp_path,
-            plan=False,  # Don't regenerate
+            plan=False,
             execute=True,
             verify=True,
         )
 
         assert result.success
-        assert result.total_tasks == 2  # Two tasks in sample plan
+        assert result.total_tasks == 2
         assert result.completed_tasks == 2
 
 
 @pytest.mark.asyncio
 async def test_execute_single_task_with_retry(orchestrator: Orchestrator):
-    """Test single task execution with retry."""
     task = Task(
         id="1.1",
         name="Test task",
@@ -258,7 +242,6 @@ async def test_execute_single_task_with_retry(orchestrator: Orchestrator):
         done="Task complete",
     )
 
-    # First attempt fails, second succeeds
     fail_result = AgentResult(
         status=AgentStatus.FAILURE, output="", error="First attempt failed", metadata={}
     )
@@ -283,13 +266,12 @@ async def test_execute_single_task_with_retry(orchestrator: Orchestrator):
         )
 
         assert task_exec.success
-        assert task_exec.retry_count == 1  # One retry
+        assert task_exec.retry_count == 1
         assert mock_executor.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_execute_single_task_max_retries_exceeded(orchestrator: Orchestrator):
-    """Test single task execution when max retries exceeded."""
     task = Task(
         id="1.1",
         name="Test task",
@@ -300,7 +282,6 @@ async def test_execute_single_task_max_retries_exceeded(orchestrator: Orchestrat
         done="Task complete",
     )
 
-    # Always fail
     fail_result = AgentResult(
         status=AgentStatus.FAILURE, output="", error="Task failed", metadata={}
     )
@@ -314,12 +295,11 @@ async def test_execute_single_task_max_retries_exceeded(orchestrator: Orchestrat
 
         assert not task_exec.success
         assert task_exec.retry_count == 2
-        assert mock_executor.call_count == 3  # Initial + 2 retries
+        assert mock_executor.call_count == 3
 
 
 @pytest.mark.asyncio
 async def test_execute_wave_parallel(orchestrator: Orchestrator):
-    """Test executing wave of tasks in parallel."""
     tasks = [
         Task(
             id="1.1",
@@ -362,7 +342,6 @@ async def test_execute_wave_parallel(orchestrator: Orchestrator):
 
 @pytest.mark.asyncio
 async def test_update_state(orchestrator: Orchestrator, tmp_path: Path):
-    """Test STATE.md update."""
     task = Task(
         id="1.1",
         name="Test task",
@@ -386,7 +365,6 @@ async def test_update_state(orchestrator: Orchestrator, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_update_state_with_error(orchestrator: Orchestrator, tmp_path: Path):
-    """Test STATE.md update with error."""
     task = Task(
         id="1.1",
         name="Test task",
@@ -410,10 +388,8 @@ async def test_update_state_with_error(orchestrator: Orchestrator, tmp_path: Pat
 async def test_workflow_continue_on_failure(
     orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
 ):
-    """Test workflow continues on failure when flag is set."""
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    # First task fails, second succeeds
     with patch.object(
         orchestrator.executor, "execute", new_callable=AsyncMock
     ) as mock_executor, patch.object(
@@ -437,9 +413,9 @@ async def test_workflow_continue_on_failure(
             continue_on_failure=True,
         )
 
-        assert not result.success  # Overall fails
+        assert not result.success
         assert result.failed_tasks == 1
-        assert result.completed_tasks == 1  # Second task completed
+        assert result.completed_tasks == 1
 
 
 @pytest.mark.asyncio
@@ -474,7 +450,6 @@ async def test_workflow_stop_on_failure(
 async def test_workflow_without_verification(
     orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
 ):
-    """Test workflow without verification step."""
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
     with patch.object(
@@ -491,7 +466,7 @@ async def test_workflow_without_verification(
             project_path=tmp_path,
             plan=False,
             execute=True,
-            verify=False,  # Skip verification
+            verify=False,
         )
 
         assert result.success

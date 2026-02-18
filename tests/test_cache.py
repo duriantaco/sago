@@ -63,9 +63,6 @@ def test_hash_is_sha256(cache: SmartCache) -> None:
     assert all(c in "0123456789abcdef" for c in h)
 
 
-# --- Cache hit/miss ---
-
-
 def test_cache_miss_returns_none(cache: SmartCache) -> None:
     """Missing cache entry returns None."""
     assert cache.get_cached_result("nonexistent_hash") is None
@@ -92,14 +89,10 @@ def test_cache_creates_json_file(cache: SmartCache, cache_dir: Path) -> None:
     assert data["result"]["success"] is True
 
 
-# --- TTL expiration ---
-
-
 def test_cache_expired_returns_none(cache_dir: Path) -> None:
     """Expired cache entries return None and are deleted."""
     cache = SmartCache(cache_dir=cache_dir, ttl_hours=0)
 
-    # Manually write an expired entry
     cache_file = cache_dir / "expired.json"
     expired_time = (datetime.now() - timedelta(hours=2)).isoformat()
     cache_file.write_text(json.dumps({
@@ -109,10 +102,7 @@ def test_cache_expired_returns_none(cache_dir: Path) -> None:
     }))
 
     assert cache.get_cached_result("expired") is None
-    assert not cache_file.exists()  # Should be deleted on read
-
-
-# --- Invalidation ---
+    assert not cache_file.exists()
 
 
 def test_invalidate_removes_entry(cache: SmartCache, cache_dir: Path) -> None:
@@ -126,10 +116,7 @@ def test_invalidate_removes_entry(cache: SmartCache, cache_dir: Path) -> None:
 
 def test_invalidate_nonexistent_is_noop(cache: SmartCache) -> None:
     """Invalidating a non-existent entry doesn't raise."""
-    cache.invalidate_task("does_not_exist")  # Should not raise
-
-
-# --- Clear all ---
+    cache.invalidate_task("does_not_exist")
 
 
 def test_clear_all(cache: SmartCache) -> None:
@@ -143,9 +130,6 @@ def test_clear_all(cache: SmartCache) -> None:
     assert cache.get_cached_result("h1") is None
 
 
-# --- Stats ---
-
-
 def test_cache_stats(cache: SmartCache) -> None:
     """get_cache_stats returns correct counts."""
     cache.set_cached_result("s1", {"success": True})
@@ -157,17 +141,11 @@ def test_cache_stats(cache: SmartCache) -> None:
     assert stats["expired_entries"] == 0
 
 
-# --- Cleanup expired ---
-
-
 def test_cleanup_expired(cache_dir: Path) -> None:
     """cleanup_expired removes only expired entries."""
     cache = SmartCache(cache_dir=cache_dir, ttl_hours=1)
 
-    # Write a valid entry
     cache.set_cached_result("valid", {"success": True})
-
-    # Write an expired entry manually
     expired_file = cache_dir / "old.json"
     expired_time = (datetime.now() - timedelta(hours=48)).isoformat()
     expired_file.write_text(json.dumps({
@@ -182,11 +160,7 @@ def test_cleanup_expired(cache_dir: Path) -> None:
     assert cache.get_cached_result("valid") is not None
 
 
-# --- Corrupt cache file ---
-
-
 def test_corrupt_cache_file_returns_none(cache: SmartCache, cache_dir: Path) -> None:
-    """Corrupt JSON in cache file returns None instead of crashing."""
     corrupt_file = cache_dir / "corrupt.json"
     corrupt_file.write_text("not valid json {{{")
 

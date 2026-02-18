@@ -1,6 +1,3 @@
-"""Tests for context compression."""
-
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +9,6 @@ from sago.utils.compression import (
     SlidingWindowCompressor,
 )
 
-# Check if llmlingua is available
 try:
     import llmlingua
 
@@ -23,7 +19,6 @@ except ImportError:
 
 @pytest.fixture
 def sample_text() -> str:
-    """Sample text for testing."""
     return """
     This is a long piece of text that needs to be compressed.
     It contains multiple sentences and paragraphs.
@@ -59,11 +54,10 @@ def test_sliding_window_compressor() -> None:
     assert "chunk4" in result.compressed_text
     assert "chunk5" in result.compressed_text
     assert result.method == "sliding_window"
-    assert result.compression_ratio < 1.0  # Should be compressed
+    assert result.compression_ratio < 1.0
 
 
 def test_sliding_window_metadata() -> None:
-    """Test sliding window metadata."""
     text = "a\n\nb\n\nc\n\nd\n\ne"
     compressor = SlidingWindowCompressor(window_size=2)
 
@@ -78,11 +72,9 @@ def test_context_manager_should_compress() -> None:
     """Test compression threshold detection."""
     manager = ContextManager(max_context_tokens=100, compression_threshold=0.8)
 
-    # Short text - no compression needed
     short_text = "Short text"
     assert manager.should_compress(short_text) is False
 
-    # Long text - compression needed (80 tokens threshold, ~400 chars)
     long_text = "x" * 400
     assert manager.should_compress(long_text) is True
 
@@ -92,10 +84,9 @@ def test_context_manager_auto_compress() -> None:
     manager = ContextManager(
         max_context_tokens=100,
         compression_threshold=0.5,
-        default_compressor="sliding_window",  # Use available compressor
+        default_compressor="sliding_window",
     )
 
-    # Short text - should use passthrough
     short_result = manager.auto_compress("Short")
     assert short_result.method == "passthrough"
     assert short_result.compression_ratio == 1.0
@@ -104,18 +95,13 @@ def test_context_manager_auto_compress() -> None:
     long_text = "\n\n".join([f"This is a longer chunk number {i}" * 10 for i in range(50)])
     long_result = manager.auto_compress(long_text)
     assert long_result is not None
-    # Will use sliding_window if text is long enough
     assert long_result.method in ["sliding_window", "passthrough"]
 
 
 def test_context_manager_compress_with_strategy() -> None:
-    """Test explicit compression strategy."""
     manager = ContextManager()
 
-    # Create text with more chunks than window size
     text = "\n\n".join([f"chunk{i}" for i in range(20)])
-
-    # Use sliding window strategy (default window is 10)
     result = manager.compress(text, strategy="sliding_window")
 
     assert result.method == "sliding_window"
@@ -123,12 +109,8 @@ def test_context_manager_compress_with_strategy() -> None:
 
 
 def test_context_manager_unknown_strategy() -> None:
-    """Test fallback for unknown strategy."""
     manager = ContextManager()
-
     result = manager.compress("test", strategy="unknown_strategy")
-
-    # Should fallback to passthrough
     assert result.method == "passthrough"
 
 
@@ -150,7 +132,6 @@ def test_context_manager_get_stats() -> None:
 
 
 def test_compression_result_properties() -> None:
-    """Test CompressionResult calculated properties."""
     from sago.utils.compression import CompressionResult
 
     result = CompressionResult(
@@ -194,15 +175,13 @@ def test_llmlingua_compressor_initialization() -> None:
 
     assert compressor.model_name == "test-model"
     assert compressor.device == "cpu"
-    assert compressor._compressor is None  # Lazy loading
+    assert compressor._compressor is None
 
 
 @pytest.mark.skipif(not HAS_LLMLINGUA, reason="llmlingua not installed")
 @pytest.mark.skipif(not HAS_LLMLINGUA, reason="llmlingua not installed")
 @patch("llmlingua.PromptCompressor")
 def test_llmlingua_compress_success(mock_compressor_class: MagicMock) -> None:
-    """Test successful LLMLingua compression."""
-    # Mock the compressor
     mock_instance = MagicMock()
     mock_instance.compress_prompt.return_value = {
         "compressed_prompt": "compressed text",
@@ -244,7 +223,6 @@ def test_llmlingua_compress_with_instruction(mock_compressor_class: MagicMock) -
 @pytest.mark.skipif(not HAS_LLMLINGUA, reason="llmlingua not installed")
 @patch("llmlingua.PromptCompressor")
 def test_llmlingua_compress_failure_fallback(mock_compressor_class: MagicMock) -> None:
-    """Test LLMLingua fallback on failure."""
     mock_instance = MagicMock()
     mock_instance.compress_prompt.side_effect = Exception("Compression failed")
     mock_compressor_class.return_value = mock_instance
@@ -252,17 +230,13 @@ def test_llmlingua_compress_failure_fallback(mock_compressor_class: MagicMock) -
     compressor = LLMLinguaCompressor()
     result = compressor.compress("original text")
 
-    # Should fallback to passthrough
     assert result.compressed_text == "original text"
     assert result.method == "passthrough"
     assert "error" in result.metadata
 
 
 def test_estimate_tokens_approximation() -> None:
-    """Test token estimation approximation."""
     compressor = PassthroughCompressor()
-
-    # 100 characters ≈ 25 tokens (1 token per 4 chars)
     text = "x" * 100
     tokens = compressor.estimate_tokens(text)
 
@@ -270,11 +244,6 @@ def test_estimate_tokens_approximation() -> None:
 
 
 def test_context_manager_target_tokens_calculation() -> None:
-    """Test automatic target token calculation."""
     manager = ContextManager(max_context_tokens=1000)
-
-    # Target should be 70% of max (700 tokens)
     result = manager.compress("test", strategy="passthrough")
-
-    # Passthrough doesn't modify, but the logic should work
     assert result is not None
