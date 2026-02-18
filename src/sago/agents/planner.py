@@ -5,6 +5,7 @@ from typing import Any
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
+from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -53,20 +54,50 @@ class PlannerAgent(BaseAgent):
 
         context = {}
 
-        files_to_load = ["PROJECT.md", "REQUIREMENTS.md", "ROADMAP.md", "STATE.md"]
+        required_files = ["PROJECT.md", "REQUIREMENTS.md"]
+        optional_files = ["IMPORTANT.md", "STATE.md"]
 
-        for filename in files_to_load:
+        for filename in required_files:
             file_path = project_path / filename
             if file_path.exists():
                 try:
                     context[filename] = file_path.read_text(encoding="utf-8")
                     self.logger.debug(f"Loaded {filename}: {len(context[filename])} chars")
+                    tracer.emit(
+                        "file_read",
+                        "PlannerAgent",
+                        {
+                            "path": filename,
+                            "size_bytes": len(context[filename].encode("utf-8")),
+                            "content_preview": context[filename][:2000],
+                        },
+                    )
                 except Exception as e:
                     self.logger.warning(f"Could not load {filename}: {e}")
                     context[filename] = ""
             else:
                 self.logger.warning(f"File not found: {filename}")
                 context[filename] = ""
+
+        for filename in optional_files:
+            file_path = project_path / filename
+            if file_path.exists():
+                try:
+                    context[filename] = file_path.read_text(encoding="utf-8")
+                    self.logger.debug(f"Loaded {filename}: {len(context[filename])} chars")
+                    tracer.emit(
+                        "file_read",
+                        "PlannerAgent",
+                        {
+                            "path": filename,
+                            "size_bytes": len(context[filename].encode("utf-8")),
+                            "content_preview": context[filename][:2000],
+                        },
+                    )
+                except Exception as e:
+                    self.logger.debug(f"Could not load optional {filename}: {e}")
+            else:
+                self.logger.debug(f"Optional file not present: {filename}")
 
         return context
 
@@ -162,8 +193,6 @@ Generate a complete, executable plan now:""",
         self.logger.info("Plan XML validated successfully")
 
     def _save_plan(self, plan_path: Path, plan_xml: str, project_context: dict[str, str]) -> None:
-  
-        # Build complete PLAN.md content
         content = f"""# PLAN.md
 
 > **CRITICAL COMPONENT:** This file uses a specific XML schema to force the AI into "Atomic Task" mode.
@@ -197,3 +226,12 @@ Each `<task>` must contain:
 
         plan_path.write_text(content, encoding="utf-8")
         self.logger.info(f"Plan saved to {plan_path}")
+        tracer.emit(
+            "file_write",
+            "PlannerAgent",
+            {
+                "path": str(plan_path.name),
+                "size_bytes": len(content.encode("utf-8")),
+                "content_preview": content[:2000],
+            },
+        )

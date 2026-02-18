@@ -1,5 +1,3 @@
-"""Git integration for automated version control."""
-
 import logging
 import subprocess
 from pathlib import Path
@@ -9,14 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class GitIntegration:
-    """Handles Git operations for automated workflows."""
-
     def __init__(self, project_path: Path) -> None:
-        """Initialize Git integration.
-
-        Args:
-            project_path: Project directory path
-        """
         self.project_path = Path(project_path)
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -29,11 +20,6 @@ class GitIntegration:
         return (self.project_path / ".git").exists()
 
     def init_repo(self) -> bool:
-        """Initialize Git repository.
-
-        Returns:
-            True if successful
-        """
         if self.is_git_repo():
             self.logger.info("Git repository already exists")
             return True

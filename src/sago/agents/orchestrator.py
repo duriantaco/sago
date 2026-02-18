@@ -18,6 +18,7 @@ from sago.core.project import ProjectManager
 from sago.utils.cache import SmartCache
 from sago.utils.compression import ContextManager
 from sago.utils.git_integration import GitIntegration
+from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +123,12 @@ class Orchestrator:
         self_heal: bool,
         use_cache: bool,
     ) -> None:
-        """Configure git, cache, and self-healing for this run."""
         self.enable_self_healing = self_heal
+
+        if self.config.enable_tracing:
+            trace_path = self.config.trace_file or (project_path / ".planning" / "trace.jsonl")
+            tracer.configure(trace_path, model=self.config.llm_model)
+            self.logger.info(f"Tracing enabled: {trace_path}")
 
         if git_commit:
             self.git = GitIntegration(project_path)
@@ -138,26 +143,6 @@ class Orchestrator:
             self.logger.info("Task caching enabled")
         else:
             self.cache = None
-
-    def _activate_focus_mode(
-        self, focus_domains: list[str] | None
-    ) -> Any:
-        """Activate focus mode, returning HostsManager or None."""
-        try:
-            from sago.blocker.manager import HostsManager
-
-            hosts_manager = HostsManager()
-            domains = focus_domains or self.config.focus_domains
-            hosts_manager.block_sites(domains)
-            self.logger.info(f"Focus mode ON: blocked {len(domains)} domains")
-            return hosts_manager
-        except PermissionError:
-            self.logger.warning(
-                "Focus mode requires elevated privileges (sudo). Continuing without it."
-            )
-        except Exception as e:
-            self.logger.warning(f"Focus mode failed to activate: {e}")
-        return None
 
     async def _load_plan(self, project_path: Path, generate: bool) -> list[Task]:
         """Load tasks from PLAN.md, optionally generating it first.
@@ -194,16 +179,26 @@ class Orchestrator:
         continue_on_failure: bool = False,
         git_commit: bool = False,
         self_heal: bool = False,
-        focus_mode: bool = False,
-        focus_domains: list[str] | None = None,
         use_cache: bool = False,
     ) -> WorkflowResult:
 
         self._setup_workflow(project_path, git_commit, self_heal, use_cache)
-        hosts_manager = self._activate_focus_mode(focus_domains) if focus_mode else None
 
         start_time = datetime.now()
         self.logger.info(f"Starting workflow for project: {project_path}")
+
+        tracer.emit(
+            "workflow_start",
+            "Orchestrator",
+            {
+                "project_path": str(project_path),
+                "flags": {
+                    "plan": plan, "execute": execute, "verify": verify,
+                    "use_cache": use_cache,
+                    "git_commit": git_commit, "self_heal": self_heal,
+                },
+            },
+        )
 
         def _elapsed() -> float:
             return (datetime.now() - start_time).total_seconds()
@@ -212,11 +207,23 @@ class Orchestrator:
             all_tasks = await self._load_plan(project_path, generate=plan)
 
             if execute:
-                return await self._execute_tasks(
+                result = await self._execute_tasks(
                     all_tasks, project_path,
                     verify=verify, max_retries=max_retries,
                     continue_on_failure=continue_on_failure,
                 )
+                tracer.emit(
+                    "workflow_end",
+                    "Orchestrator",
+                    {
+                        "success": result.success,
+                        "total_tasks": result.total_tasks,
+                        "completed": result.completed_tasks,
+                        "failed": result.failed_tasks,
+                        "duration_s": round(result.total_duration, 2),
+                    },
+                )
+                return result
 
             return WorkflowResult(
                 success=True, total_tasks=len(all_tasks), completed_tasks=0,
@@ -224,22 +231,18 @@ class Orchestrator:
             )
 
         except ValueError as e:
+            tracer.emit("error", "Orchestrator", {"error_type": "workflow", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
         except Exception as e:
             self.logger.error(f"Workflow failed: {e}", exc_info=True)
+            tracer.emit("error", "Orchestrator", {"error_type": "workflow", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
         finally:
-            if hosts_manager is not None:
-                try:
-                    hosts_manager.unblock_sites()
-                    self.logger.info("Focus mode OFF: unblocked all domains")
-                except Exception as e:
-                    self.logger.warning(f"Failed to deactivate focus mode: {e}")
+            tracer.close()
 
     async def _record_task_result(
         self, task_exec: TaskExecution, project_path: Path
     ) -> None:
-        """Log and persist a single task execution result."""
         if task_exec.success:
             self.logger.info(
                 f"Task {task_exec.task.id} completed in {task_exec.duration:.1f}s"
@@ -487,7 +490,17 @@ class Orchestrator:
 
         task_hash, pre_exec_contents, cached_exec = self._check_cache(task, project_path)
         if cached_exec is not None:
+            tracer.emit("cache_hit", "Orchestrator", {"task_id": task.id})
             return cached_exec
+
+        if self.cache is not None:
+            tracer.emit("cache_miss", "Orchestrator", {"task_id": task.id})
+
+        tracer.emit(
+            "task_start",
+            "Orchestrator",
+            {"task_id": task.id, "task_name": task.name, "files": task.files},
+        )
 
         task_exec = TaskExecution(
             task=task,
@@ -500,6 +513,19 @@ class Orchestrator:
         await self._retry_task(task, task_exec, project_path, verify, max_retries)
         self._finalize_task(task, task_exec, task_hash, pre_exec_contents, project_path)
         task_exec.end_time = datetime.now()
+
+        tracer.emit(
+            "task_end",
+            "Orchestrator",
+            {
+                "task_id": task.id,
+                "task_name": task.name,
+                "success": task_exec.success,
+                "duration_s": round(task_exec.duration, 2),
+                "retry_count": task_exec.retry_count,
+            },
+        )
+
         return task_exec
 
     async def _retry_task(
@@ -507,6 +533,7 @@ class Orchestrator:
         project_path: Path, verify: bool, max_retries: int,
     ) -> None:
         context = {"task": task, "project_path": project_path}
+        previous_attempts: list[str] = []
         for attempt in range(max_retries + 1):
             if attempt > 0:
                 self.logger.info(f"Retrying task {task.id} (attempt {attempt + 1})")
@@ -518,8 +545,13 @@ class Orchestrator:
                 self.logger.warning(
                     f"Task {task.id} execution failed: {task_exec.execution_result.error}"
                 )
+                previous_attempts.append(
+                    f"Execution error: {task_exec.execution_result.error}"
+                )
                 if self.enable_self_healing and attempt < max_retries:
-                    await self._attempt_self_heal(task, task_exec, project_path)
+                    await self._attempt_self_heal(
+                        task, task_exec, project_path, previous_attempts
+                    )
                 continue
 
             if not verify:
@@ -533,8 +565,13 @@ class Orchestrator:
                 f"Task {task.id} verification failed: "
                 f"{task_exec.verification_result.error}"
             )
+            previous_attempts.append(
+                f"Verification error: {task_exec.verification_result.error}"
+            )
             if self.enable_self_healing and attempt < max_retries:
-                await self._attempt_self_heal(task, task_exec, project_path)
+                await self._attempt_self_heal(
+                    task, task_exec, project_path, previous_attempts
+                )
 
     def _finalize_task(
         self, task: Task, task_exec: TaskExecution,
@@ -561,6 +598,7 @@ class Orchestrator:
         task: Task,
         task_exec: TaskExecution,
         project_path: Path,
+        previous_attempts: list[str] | None = None,
     ) -> None:
 
         error = (
@@ -586,11 +624,20 @@ class Orchestrator:
                 except Exception:
                     pass
 
-        heal_context = {
+        verify_stdout = ""
+        verify_stderr = ""
+        if task_exec.verification_result and task_exec.verification_result.metadata:
+            verify_stdout = task_exec.verification_result.metadata.get("stdout", "")
+            verify_stderr = task_exec.verification_result.metadata.get("stderr", "")
+
+        heal_context: dict[str, Any] = {
             "task": task,
             "error": error,
             "original_code": "\n\n".join(original_code_parts),
             "project_path": project_path,
+            "verify_stdout": verify_stdout,
+            "verify_stderr": verify_stderr,
+            "previous_attempts": previous_attempts or [],
         }
 
         heal_result = await self.self_healer.execute(heal_context)

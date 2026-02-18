@@ -1,6 +1,5 @@
-"""Executor agent for implementing tasks."""
-
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -8,15 +7,26 @@ from typing import Any
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import Task
 from sago.core.project import ProjectManager
+from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
 
+_DEPENDENCY_FILES = [
+    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
+    "package.json", "Cargo.toml", "go.mod", "Gemfile",
+    "Makefile", "Dockerfile", "docker-compose.yml",
+    ".env.example",
+]
+
+_SKIP_DIRS = {
+    "__pycache__", ".git", ".planning", "node_modules", ".venv", "venv",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", "htmlcov", ".tox",
+    "dist", "build", "*.egg-info",
+}
+
 
 class ExecutorAgent(BaseAgent):
-    """Agent that executes tasks by generating and applying code changes."""
-
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Initialize executor agent."""
         super().__init__(*args, **kwargs)
         self.project_manager = ProjectManager(self.config)
 
@@ -53,47 +63,60 @@ class ExecutorAgent(BaseAgent):
         )
 
     async def _build_task_context(self, task: Task, project_path: Path) -> str:
-        """Build context for task execution.
-
-        Args:
-            task: Task to execute
-            project_path: Project directory path
-
-        Returns:
-            Context string with relevant information
-        """
         context_parts = []
 
-        # Add task details
         context_parts.append("=== TASK ===")
         context_parts.append(f"ID: {task.id}")
         context_parts.append(f"Name: {task.name}")
         context_parts.append(f"Phase: {task.phase_name}")
         context_parts.append(f"\nAction:\n{task.action}")
-        context_parts.append(f"\nFiles to modify:\n{chr(10).join(f'- {f}' for f in task.files)}")
-        context_parts.append(f"\nVerification: {task.verify}")
+        context_parts.append(f"\nFiles to create/modify:\n{chr(10).join(f'- {f}' for f in task.files)}")
+        context_parts.append(f"\nVerification command: {task.verify}")
         context_parts.append(f"Done criteria: {task.done}")
 
-        # Add existing file contents if files exist
+        tree = self._get_file_tree(project_path)
+        if tree:
+            context_parts.append(f"\n=== PROJECT STRUCTURE ===\n{tree}")
+
+        dep_context = self._get_dependency_context(project_path)
+        if dep_context:
+            context_parts.append(dep_context)
+
         for file_path_str in task.files:
             file_path = project_path / file_path_str
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding="utf-8")
+                    tracer.emit(
+                        "file_read",
+                        "ExecutorAgent",
+                        {
+                            "path": file_path_str,
+                            "size_bytes": len(content.encode("utf-8")),
+                            "content_preview": content[:2000],
+                        },
+                    )
                     context_parts.append(f"\n=== EXISTING: {file_path_str} ===")
                     context_parts.append(content)
                 except Exception as e:
                     self.logger.warning(f"Could not read {file_path}: {e}")
 
-        # Add project context files
-        for context_file in ["PROJECT.md", "REQUIREMENTS.md"]:
+        for context_file in ["PROJECT.md", "REQUIREMENTS.md", "IMPORTANT.md"]:
             file_path = project_path / context_file
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding="utf-8")
-                    # Limit context size
-                    if len(content) > 2000:
-                        content = content[:2000] + "\n... (truncated)"
+                    tracer.emit(
+                        "file_read",
+                        "ExecutorAgent",
+                        {
+                            "path": context_file,
+                            "size_bytes": len(content.encode("utf-8")),
+                            "content_preview": content[:2000],
+                        },
+                    )
+                    if len(content) > 4000:
+                        content = content[:4000] + "\n... (truncated)"
                     context_parts.append(f"\n=== {context_file} ===")
                     context_parts.append(content)
                 except Exception as e:
@@ -101,6 +124,53 @@ class ExecutorAgent(BaseAgent):
 
         full_context = "\n".join(context_parts)
         return self._compress_context(full_context)
+
+    def _get_file_tree(self, project_path: Path, max_lines: int = 60) -> str:
+        lines: list[str] = []
+        try:
+            for root, dirs, files in os.walk(project_path):
+                dirs[:] = [
+                    d for d in sorted(dirs)
+                    if d not in _SKIP_DIRS and not d.endswith(".egg-info")
+                ]
+                rel = Path(root).relative_to(project_path)
+                depth = len(rel.parts)
+                indent = "  " * depth
+                if rel != Path("."):
+                    lines.append(f"{indent}{rel.name}/")
+                for f in sorted(files):
+                    if f.startswith(".") and f not in (".env.example", ".gitignore"):
+                        continue
+                    lines.append(f"{indent}  {f}")
+                if len(lines) >= max_lines:
+                    lines.append("  ... (truncated)")
+                    break
+        except Exception as e:
+            self.logger.debug(f"Could not build file tree: {e}")
+        return "\n".join(lines)
+
+    def _get_dependency_context(self, project_path: Path) -> str:
+        parts: list[str] = []
+        for filename in _DEPENDENCY_FILES:
+            file_path = project_path / filename
+            if file_path.exists():
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    if len(content) > 3000:
+                        content = content[:3000] + "\n... (truncated)"
+                    parts.append(f"\n=== {filename} ===\n{content}")
+                    tracer.emit(
+                        "file_read",
+                        "ExecutorAgent",
+                        {
+                            "path": filename,
+                            "size_bytes": len(content.encode("utf-8")),
+                            "content_preview": content[:2000],
+                        },
+                    )
+                except Exception:
+                    pass
+        return "\n".join(parts)
 
     async def _generate_changes(self, task: Task, context: str) -> dict[str, str]:
         """Generate code changes for task.
@@ -116,30 +186,28 @@ class ExecutorAgent(BaseAgent):
             {
                 "role": "system",
                 "content": self._build_system_prompt(
-                    "expert software developer who writes clean, production-quality code"
+                    "senior software engineer implementing a task from a project plan"
                 ),
             },
             {
                 "role": "user",
-                "content": f"""Generate code to complete this task:
+                "content": f"""Implement the following task. The context includes the project structure, \
+dependencies, existing files, and the project spec.
 
 {context}
 
-CRITICAL REQUIREMENTS:
-1. Generate complete, working code (not pseudocode or comments)
-2. Follow best practices for the language/framework
-3. Include proper error handling
-4. Add type hints (if Python)
-5. Write clean, readable code
-6. Ensure code will pass the verification command
-7. Only generate the specific files listed in the task
+REQUIREMENTS:
+1. Output COMPLETE file contents — every import, every function, every line. No placeholders.
+2. Match the project's existing style, naming, and patterns (see EXISTING files and dependencies).
+3. Your code MUST pass the verification command shown above.
+4. Only generate the files listed in "Files to create/modify" — nothing else.
+5. If modifying an existing file, include the FULL file contents (not a diff).
 
-Output format:
-For each file, use this format:
+OUTPUT FORMAT — use exactly this format for each file:
 
-=== FILE: path/to/file.py ===
-```python
-# Complete file content here
+=== FILE: path/to/file.ext ===
+```language
+complete file contents here
 ```
 
 Generate the code now:""",
@@ -149,21 +217,11 @@ Generate the code now:""",
         response = await self._call_llm(messages)
         content = response["content"]
 
-        # Parse generated code
         return self._parse_generated_code(content)
 
     def _parse_generated_code(self, content: str) -> dict[str, str]:
-        """Parse generated code from LLM response.
-
-        Args:
-            content: LLM response content
-
-        Returns:
-            Dictionary mapping file paths to content
-        """
         changes = {}
 
-        # Pattern: === FILE: path/to/file.ext ===
         file_pattern = r"===\s*FILE:\s*([^\s]+)\s*===\s*```(?:\w+)?\s*(.*?)\s*```"
 
         matches = re.finditer(file_pattern, content, re.DOTALL | re.MULTILINE)
@@ -185,18 +243,19 @@ Generate the code now:""",
         return changes
 
     def _apply_changes(self, changes: dict[str, str], project_path: Path) -> None:
-        """Apply code changes to files.
-
-        Args:
-            changes: Dictionary mapping file paths to new content
-            project_path: Project directory path
-        """
         for file_path_str, content in changes.items():
             file_path = project_path / file_path_str
 
-            # Create parent directories if needed
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write file
             file_path.write_text(content, encoding="utf-8")
             self.logger.info(f"Wrote {len(content)} chars to {file_path}")
+            tracer.emit(
+                "file_write",
+                "ExecutorAgent",
+                {
+                    "path": file_path_str,
+                    "size_bytes": len(content.encode("utf-8")),
+                    "content_preview": content[:2000],
+                },
+            )

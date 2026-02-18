@@ -29,8 +29,6 @@ class Task:
 
 @dataclass
 class Phase:
-    """Represents a phase containing multiple tasks."""
-
     name: str
     description: str
     tasks: list[Task]
@@ -45,8 +43,6 @@ class Phase:
 
 @dataclass
 class Requirement:
-    """Represents a requirement from REQUIREMENTS.md."""
-
     id: str
     description: str
     completed: bool
@@ -64,15 +60,12 @@ class Requirement:
 
 @dataclass
 class Milestone:
-    """Represents a milestone from ROADMAP.md."""
-
     id: str
     phase: str
     description: str
     completed: bool
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert milestone to dictionary."""
         return {
             "id": self.id,
             "phase": self.phase,
@@ -82,8 +75,6 @@ class Milestone:
 
 
 class MarkdownParser:
-    """Parser for sago markdown and XML content."""
-
     def parse_xml_tasks(self, content: str) -> list[Phase]:
         xml_pattern = r"```xml\s*(.*?)\s*```"
         xml_match = re.search(xml_pattern, content, re.DOTALL)
@@ -119,7 +110,6 @@ class MarkdownParser:
                 verify_elem = task_elem.find("verify")
                 done_elem = task_elem.find("done")
 
-                # Extract files list
                 files = []
                 if files_elem is not None and files_elem.text:
                     files = [
@@ -160,14 +150,12 @@ class MarkdownParser:
         for line in content.split("\n"):
             line = line.strip()
 
-            # Check for version headers
             if line.startswith("### V"):
                 version_match = re.match(r"### (V\d+)", line)
                 if version_match:
                     current_version = version_match.group(1)
                 continue
 
-            # Parse requirement line
             match = re.match(req_pattern, line)
             if match:
                 completed = match.group(1) == "x"
@@ -251,7 +239,6 @@ class MarkdownParser:
         for line in content.split("\n"):
             line = line.strip()
 
-            # Update section tracking
             if line.startswith("###"):
                 current_section = section_map.get(line, "")
                 continue

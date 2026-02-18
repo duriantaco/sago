@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import shlex
+import time
 from pathlib import Path
 from typing import Any
 
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import Task
+from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,8 @@ class VerifierAgent(BaseAgent):
     async def _run_subprocess(
         self, cmd: list[str], project_path: Path
     ) -> dict[str, Any]:
+        start = time.monotonic()
+        command_str = " ".join(cmd)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -104,8 +108,19 @@ class VerifierAgent(BaseAgent):
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
+            duration_s = time.monotonic() - start
             self.logger.error(
                 f"Verification timed out after {self.config.verify_timeout}s"
+            )
+            tracer.emit(
+                "verify_run",
+                "VerifierAgent",
+                {
+                    "command": command_str,
+                    "exit_code": -1,
+                    "success": False,
+                    "duration_s": round(duration_s, 3),
+                },
             )
             return {
                 "success": False,
@@ -114,7 +129,18 @@ class VerifierAgent(BaseAgent):
                 "stderr": f"Command timed out after {self.config.verify_timeout} seconds",
             }
         except Exception as e:
+            duration_s = time.monotonic() - start
             self.logger.error(f"Verification command failed: {e}")
+            tracer.emit(
+                "verify_run",
+                "VerifierAgent",
+                {
+                    "command": command_str,
+                    "exit_code": -1,
+                    "success": False,
+                    "duration_s": round(duration_s, 3),
+                },
+            )
             return {
                 "success": False,
                 "exit_code": -1,
@@ -122,6 +148,7 @@ class VerifierAgent(BaseAgent):
                 "stderr": str(e),
             }
 
+        duration_s = time.monotonic() - start
         stdout = stdout_bytes.decode("utf-8", errors="replace")
         stderr = stderr_bytes.decode("utf-8", errors="replace")
         returncode = proc.returncode or 0
@@ -130,6 +157,18 @@ class VerifierAgent(BaseAgent):
         self.logger.info(
             f"Verification {'passed' if success else 'failed'} "
             f"(exit code: {returncode})"
+        )
+        tracer.emit(
+            "verify_run",
+            "VerifierAgent",
+            {
+                "command": command_str,
+                "exit_code": returncode,
+                "success": success,
+                "duration_s": round(duration_s, 3),
+                "stdout": stdout[:2000],
+                "stderr": stderr[:2000],
+            },
         )
         return {
             "success": success,

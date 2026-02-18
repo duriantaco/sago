@@ -74,28 +74,6 @@ class Config(BaseSettings):
         description="Optional log file path",
     )
 
-    hosts_file: Path | None = Field(
-        default=None,
-        description="Path to hosts file (auto-detected if None)",
-    )
-    blocked_domains: list[str] = Field(
-        default_factory=list,
-        description="List of domains to block by default",
-    )
-
-    focus_domains: list[str] = Field(
-        default=[
-            "youtube.com",
-            "reddit.com",
-            "twitter.com",
-            "x.com",
-            "tiktok.com",
-            "instagram.com",
-            "facebook.com",
-        ],
-        description="Domains to block during focus mode workflows",
-    )
-
     enable_compression: bool = Field(
         default=False,
         description="Enable context compression for LLM calls (opt-in)",
@@ -106,17 +84,14 @@ class Config(BaseSettings):
         description="Token threshold for when compression kicks in",
     )
 
-    def get_hosts_file_path(self) -> Path:
-        if self.hosts_file:
-            return self.hosts_file
-
-        import platform
-
-        system = platform.system()
-        if system == "Windows":
-            return Path(r"C:\Windows\System32\drivers\etc\hosts")
-        else:
-            return Path("/etc/hosts")
+    enable_tracing: bool = Field(
+        default=False,
+        description="Enable trace event logging for observability dashboard",
+    )
+    trace_file: Path | None = Field(
+        default=None,
+        description="Path to trace JSONL file (auto-set when enable_tracing is True)",
+    )
 
     def model_post_init(self, __context: object) -> None:
         self.planning_dir.mkdir(parents=True, exist_ok=True)

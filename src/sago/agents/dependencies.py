@@ -1,8 +1,5 @@
-"""Dependency resolver for task execution ordering."""
-
 import logging
 from collections import defaultdict
-from typing import Any
 
 from sago.core.parser import Task
 
@@ -10,45 +7,24 @@ logger = logging.getLogger(__name__)
 
 
 class CircularDependencyError(Exception):
-    """Raised when circular dependencies are detected."""
-
     pass
 
 
 class DependencyResolver:
-    """Resolves task dependencies and creates execution waves."""
-
     def __init__(self) -> None:
-        """Initialize dependency resolver."""
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def resolve(self, tasks: list[Task]) -> list[list[Task]]:
-        """Resolve dependencies and return waves of parallel tasks.
-
-        Args:
-            tasks: List of tasks to resolve
-
-        Returns:
-            List of waves, where each wave contains tasks that can run in parallel
-
-        Raises:
-            CircularDependencyError: If circular dependencies are detected
-        """
         if not tasks:
             return []
 
-        # Build dependency graph based on file dependencies
         task_map = {task.id: task for task in tasks}
         graph = self._build_dependency_graph(tasks)
 
-        # Detect circular dependencies
         if self._has_circular_dependency(graph, task_map):
             raise CircularDependencyError("Circular dependencies detected in task graph")
 
-        # Topological sort to create waves
         waves = self._create_execution_waves(graph, task_map)
-
-        # Split waves that have file overlaps to prevent parallel file conflicts
         waves = self._split_overlapping_waves(waves)
 
         self.logger.info(f"Resolved {len(tasks)} tasks into {len(waves)} waves")
@@ -58,28 +34,12 @@ class DependencyResolver:
         return waves
 
     def _build_dependency_graph(self, tasks: list[Task]) -> dict[str, set[str]]:
-        """Build dependency graph based on file dependencies.
-
-        A task depends on another if it modifies files that the other task creates.
-
-        Uses a two-pass approach:
-        1. First pass: identify which file each task creates (first file in list)
-        2. Second pass: build dependencies based on all file references
-
-        Args:
-            tasks: List of tasks
-
-        Returns:
-            Dictionary mapping task_id -> set of task_ids it depends on
-        """
         graph: dict[str, set[str]] = defaultdict(set)
-        file_creators: dict[str, str] = {}  # file -> task_id that creates it
+        file_creators: dict[str, str] = {}
 
-        # Sort tasks by ID to process in order
         sorted_tasks = sorted(tasks, key=lambda t: t.id)
 
         # First pass: identify primary file created by each task
-        # We assume the first file in the list is the one being created
         for task in sorted_tasks:
             if task.files:
                 primary_file = task.files[0]
@@ -87,7 +47,6 @@ class DependencyResolver:
                     file_creators[primary_file] = task.id
 
         # Second pass: build dependency graph
-        # A task depends on another if it references files created by that task
         for task in sorted_tasks:
             graph[task.id] = set()
 
@@ -151,16 +110,13 @@ class DependencyResolver:
         in_degree: dict[str, int] = {}
         completed: set[str] = set()
 
-        # Build reverse adjacency list: task_id -> list of tasks that depend on it
         dependents: dict[str, list[str]] = defaultdict(list)
         for task_id, deps in graph.items():
             in_degree[task_id] = len(deps)
             for dep_id in deps:
                 dependents[dep_id].append(task_id)
 
-        # Process tasks in waves
         while len(completed) < len(graph):
-            # Find all tasks with no remaining dependencies
             current_wave = [
                 task_map[tid]
                 for tid, degree in in_degree.items()
@@ -174,7 +130,6 @@ class DependencyResolver:
 
             waves.append(current_wave)
 
-            # Mark completed and update in-degrees via reverse adjacency list
             for task in current_wave:
                 completed.add(task.id)
                 for dependent_id in dependents.get(task.id, []):
@@ -221,26 +176,10 @@ class DependencyResolver:
         return result
 
     def get_task_order(self, tasks: list[Task]) -> list[Task]:
-        """Get a flat list of tasks in execution order.
-
-        Args:
-            tasks: List of tasks to order
-
-        Returns:
-            Ordered list of tasks
-        """
         waves = self.resolve(tasks)
         return [task for wave in waves for task in wave]
 
     def visualize_dependencies(self, tasks: list[Task]) -> str:
-        """Create a text visualization of task dependencies.
-
-        Args:
-            tasks: List of tasks
-
-        Returns:
-            String representation of dependency graph
-        """
         graph = self._build_dependency_graph(tasks)
         task_map = {task.id: task for task in tasks}
 

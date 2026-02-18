@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from typing import Any
 
 from sago.core.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectManager:
@@ -9,10 +12,8 @@ class ProjectManager:
     TEMPLATE_FILES = [
         "PROJECT.md",
         "REQUIREMENTS.md",
-        "ROADMAP.md",
-        "STATE.md",
         "PLAN.md",
-        "SUMMARY.md",
+        "STATE.md",
         "IMPORTANT.md",
     ]
 
@@ -45,9 +46,7 @@ class ProjectManager:
         project_path = Path(project_path).resolve()
         project_name = project_name or project_path.name
 
-        # Create project directory
         if project_path.exists() and not overwrite:
-            # Check if any template files exist
             existing_templates = [
                 f for f in self.TEMPLATE_FILES if (project_path / f).exists()
             ]
@@ -59,11 +58,9 @@ class ProjectManager:
         else:
             project_path.mkdir(parents=True, exist_ok=True)
 
-        # Create .planning directory
         planning_dir = project_path / ".planning"
         planning_dir.mkdir(exist_ok=True)
 
-        # Copy template files
         templates_dir = self.config.templates_dir
         template_vars = template_vars or {}
         template_vars.setdefault("project_name", project_name)
@@ -73,54 +70,99 @@ class ProjectManager:
             dst = project_path / template_file
 
             if src.exists():
-                # Read template content
                 content = src.read_text(encoding="utf-8")
-
-                # Simple variable substitution
                 for key, value in template_vars.items():
                     placeholder = f"{{{{{key}}}}}"
                     content = content.replace(placeholder, str(value))
 
-                # Write to destination
                 dst.write_text(content, encoding="utf-8")
 
-    def read_file(self, project_path: Path, filename: str) -> str:
-        """Read a project file.
+    async def generate_from_prompt(
+        self,
+        prompt: str,
+        project_path: Path,
+        project_name: str,
+    ) -> None:
+        """Generate PROJECT.md and REQUIREMENTS.md from a one-line prompt via LLM.
 
         Args:
-            project_path: Path to project directory
-            filename: Name of file to read
-
-        Returns:
-            File contents as string
+            prompt: User's project description
+            project_path: Path to the initialized project
+            project_name: Name of the project
 
         Raises:
-            FileNotFoundError: If file doesn't exist
+            ValueError: If the LLM response cannot be parsed into files
         """
+        from sago.utils.llm import LLMClient
+
+        client = LLMClient(
+            model=self.config.llm_model,
+            api_key=self.config.llm_api_key or None,
+            temperature=self.config.llm_temperature,
+            max_tokens=self.config.llm_max_tokens,
+        )
+
+        system_prompt = (
+            "You are a software architect. Given a project idea, produce two markdown files.\n"
+            "Use exactly this format — no extra commentary:\n\n"
+            "=== FILE: PROJECT.md ===\n"
+            "(full PROJECT.md content)\n\n"
+            "=== FILE: REQUIREMENTS.md ===\n"
+            "(full REQUIREMENTS.md content)\n\n"
+            "PROJECT.md must have: # <project name>, ## Project Vision, "
+            "## Tech Stack & Constraints (bullet list), ## Core Architecture.\n"
+            "REQUIREMENTS.md must have: # <project name> Requirements, "
+            "## V1 Requirements (MVP) with * [ ] **REQ-N:** format."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"Project name: {project_name}\nIdea: {prompt}",
+            },
+        ]
+
+        response = client.chat_completion(messages)
+        content = response["content"]
+
+        generated = self._parse_generated_files(content)
+
+        for filename, file_content in generated.items():
+            (project_path / filename).write_text(file_content, encoding="utf-8")
+            logger.info(f"Wrote generated {filename} ({len(file_content)} chars)")
+
+    @staticmethod
+    def _parse_generated_files(content: str) -> dict[str, str]:
+        files: dict[str, str] = {}
+        expected = {"PROJECT.md", "REQUIREMENTS.md"}
+
+        parts = content.split("=== FILE: ")
+        for part in parts[1:]:  # skip text before first marker
+            header, _, body = part.partition("===")
+            filename = header.strip()
+            if filename in expected:
+                files[filename] = body.strip() + "\n"
+
+        missing = expected - set(files.keys())
+        if missing:
+            raise ValueError(
+                f"LLM output missing expected files: {', '.join(sorted(missing))}"
+            )
+
+        return files
+
+    def read_file(self, project_path: Path, filename: str) -> str:
         file_path = Path(project_path) / filename
         return file_path.read_text(encoding="utf-8")
 
     def write_file(self, project_path: Path, filename: str, content: str) -> None:
-        """Write content to a project file.
-
-        Args:
-            project_path: Path to project directory
-            filename: Name of file to write
-            content: Content to write
-        """
         file_path = Path(project_path) / filename
         file_path.write_text(content, encoding="utf-8")
 
     def update_file(
         self, project_path: Path, filename: str, updates: dict[str, str]
     ) -> None:
-        """Update specific sections in a project file.
-
-        Args:
-            project_path: Path to project directory
-            filename: Name of file to update
-            updates: Dictionary of {search_string: replacement_string}
-        """
         content = self.read_file(project_path, filename)
 
         for search, replace in updates.items():
@@ -129,14 +171,6 @@ class ProjectManager:
         self.write_file(project_path, filename, content)
 
     def get_project_info(self, project_path: Path) -> dict[str, Any]:
-        """Get information about a project.
-
-        Args:
-            project_path: Path to project directory
-
-        Returns:
-            Dictionary with project information
-        """
         project_path = Path(project_path)
         info: dict[str, Any] = {
             "path": str(project_path),
@@ -153,19 +187,9 @@ class ProjectManager:
         return info
 
     def is_sago_project(self, project_path: Path) -> bool:
-        """Check if a directory is a sago project.
-
-        Args:
-            project_path: Path to check
-
-        Returns:
-            True if directory contains sago template files
-        """
         project_path = Path(project_path)
         if not project_path.exists():
             return False
 
-        # A sago project should have at least PROJECT.md or REQUIREMENTS.md
-        # PLAN.md can be generated, so it's not required
         required_files = ["PROJECT.md", "REQUIREMENTS.md"]
         return any((project_path / f).exists() for f in required_files)

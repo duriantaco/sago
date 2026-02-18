@@ -1,7 +1,6 @@
-"""Base agent interface for all sago agents."""
-
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
@@ -11,13 +10,12 @@ from typing import Any
 from sago.core.config import Config
 from sago.utils.compression import ContextManager
 from sago.utils.llm import LLMClient
+from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
 
 
 class AgentStatus(str, Enum):
-    """Agent execution status."""
-
     SUCCESS = "success"
     FAILURE = "failure"
     PARTIAL = "partial"
@@ -26,8 +24,6 @@ class AgentStatus(str, Enum):
 
 @dataclass
 class AgentResult:
-    """Result from agent execution."""
-
     status: AgentStatus
     output: str
     metadata: dict[str, Any]
@@ -35,11 +31,9 @@ class AgentResult:
 
     @property
     def success(self) -> bool:
-        """Check if agent execution was successful."""
         return self.status == AgentStatus.SUCCESS
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
         return {
             "status": self.status.value,
             "output": self.output,
@@ -49,11 +43,6 @@ class AgentResult:
 
 
 class BaseAgent(ABC):
-    """Abstract base class for all sago agents.
-
-    All agents should inherit from this class and implement the execute() method.
-    """
-
     def __init__(
         self,
         config: Config | None = None,
@@ -94,6 +83,15 @@ class BaseAgent(ABC):
                 f"Compressed context: {result.original_tokens} -> {result.compressed_tokens} "
                 f"tokens ({result.percentage_saved:.1f}% saved)"
             )
+            tracer.emit(
+                "compression",
+                self.__class__.__name__,
+                {
+                    "original_tokens": result.original_tokens,
+                    "compressed_tokens": result.compressed_tokens,
+                    "savings_pct": round(result.percentage_saved, 1),
+                },
+            )
         return result.compressed_text
 
     @abstractmethod
@@ -117,17 +115,14 @@ class BaseAgent(ABC):
         Returns:
             System prompt string
         """
-        return f"""You are a {role} in the sago (Claude Code Control Protocol) system.
+        return f"""You are a {role}.
 
-Your role is to {role}.
-
-Guidelines:
-- Be precise and accurate
-- Follow best practices
-- Generate production-quality output
-- Explain your reasoning when appropriate
-- Use the provided context effectively
-- Format output as requested
+Rules:
+- Generate complete, working code — never pseudocode, stubs, or TODO comments
+- Match the existing project's style, naming conventions, and patterns
+- Every file you output must be syntactically valid and immediately runnable
+- Only output what was asked for — no extra files, no unsolicited refactoring
+- If the task specifies a verification command, your output MUST pass it
 """
 
     def _build_prompt(self, task: str, context: str, output_format: str) -> list[dict[str, str]]:
@@ -168,17 +163,41 @@ Please provide output in the following format:
         Returns:
             LLM response dictionary
         """
+        agent_name = self.__class__.__name__
         try:
             self.logger.info(f"Calling LLM with {len(messages)} messages")
-            # Run sync LLM call in executor to avoid blocking the event loop
+            start = time.monotonic()
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(
                 None, partial(self.llm.chat_completion, messages, **kwargs)
             )
-            self.logger.info(f"LLM response: {response['usage']['total_tokens']} tokens")
+            duration_s = time.monotonic() - start
+            usage = response.get("usage", {})
+            self.logger.info(f"LLM response: {usage.get('total_tokens', 0)} tokens")
+            prompt_preview = ""
+            for m in reversed(messages):
+                if m.get("role") == "user":
+                    prompt_preview = m.get("content", "")[:3000]
+                    break
+            response_preview = response.get("content", "")[:5000]
+            tracer.emit(
+                "llm_call",
+                agent_name,
+                {
+                    "model": self.config.llm_model,
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
+                    "completion_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                    "duration_s": round(duration_s, 3),
+                    "prompt_preview": prompt_preview,
+                    "response_preview": response_preview,
+                },
+                duration_ms=round(duration_s * 1000, 2),
+            )
             return response
         except Exception as e:
             self.logger.error(f"LLM call failed: {e}")
+            tracer.emit("error", agent_name, {"error_type": "llm_call", "message": str(e)})
             raise
 
     def _create_result(
