@@ -1,12 +1,11 @@
 """
-sago - Claude Code Control Protocol
+sago - Spec-Aware Generation Orchestrator
 
-A Python-based AI-powered project orchestration and productivity tool.
-Inspired by Get Shit Done (GSD) but with better architecture and Python-native features.
+Turns markdown specs into working code via multi-agent LLM pipeline.
 """
 
-__version__ = "0.1.0"
-__author__ = "sago Contributors"
-__license__ = "MIT"
+__version__ = "0.1.1"
+__author__ = "oha"
+__license__ = "Apache-2.0"
 
 __all__ = ["__version__"]

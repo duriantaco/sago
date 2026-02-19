@@ -37,7 +37,10 @@ class TestClassifyError:
         assert agent._classify_error("NameError: name 'x' is not defined") == "name_error"
 
     def test_attribute_error(self, agent: SelfHealingAgent) -> None:
-        assert agent._classify_error("AttributeError: 'str' has no attribute 'foo'") == "attribute_error"
+        assert (
+            agent._classify_error("AttributeError: 'str' has no attribute 'foo'")
+            == "attribute_error"
+        )
 
     def test_type_error(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("TypeError: expected str, got int") == "type_error"
@@ -58,7 +61,9 @@ class TestClassifyError:
         assert agent._classify_error("KeyError: 'missing_key'") == "key_error"
 
     def test_file_not_found_error(self, agent: SelfHealingAgent) -> None:
-        assert agent._classify_error("FileNotFoundError: [Errno 2] No such file") == "file_not_found"
+        assert (
+            agent._classify_error("FileNotFoundError: [Errno 2] No such file") == "file_not_found"
+        )
 
     def test_no_such_file_phrase(self, agent: SelfHealingAgent) -> None:
         assert agent._classify_error("No such file or directory: 'foo.txt'") == "file_not_found"
@@ -84,7 +89,6 @@ class TestClassifyError:
 
 
 class TestShouldAttemptFix:
-
     def test_import_error_fixable(self, agent: SelfHealingAgent, sample_task: Task) -> None:
         assert agent.should_attempt_fix("ImportError: no module named foo", sample_task) is True
 
@@ -95,13 +99,20 @@ class TestShouldAttemptFix:
         assert agent.should_attempt_fix("TypeError: bad argument", sample_task) is True
 
     def test_assertion_fixable(self, agent: SelfHealingAgent, sample_task: Task) -> None:
-        assert agent.should_attempt_fix("FAILED tests/test_foo.py - assert x == y", sample_task) is True
+        assert (
+            agent.should_attempt_fix("FAILED tests/test_foo.py - assert x == y", sample_task)
+            is True
+        )
 
-    def test_short_unknown_error_not_fixable(self, agent: SelfHealingAgent, sample_task: Task) -> None:
+    def test_short_unknown_error_not_fixable(
+        self, agent: SelfHealingAgent, sample_task: Task
+    ) -> None:
         """Errors < 20 chars without known keywords are skipped."""
         assert agent.should_attempt_fix("error occurred", sample_task) is False
 
-    def test_long_unknown_error_not_fixable(self, agent: SelfHealingAgent, sample_task: Task) -> None:
+    def test_long_unknown_error_not_fixable(
+        self, agent: SelfHealingAgent, sample_task: Task
+    ) -> None:
         """Long errors without any known keywords are not fixable either."""
         assert agent.should_attempt_fix("a" * 30, sample_task) is False
 
@@ -110,12 +121,18 @@ class TestShouldAttemptFix:
 
 
 class TestBuildFixPrompt:
-
     def test_known_error_types_have_prompts(self, agent: SelfHealingAgent) -> None:
         known_types = [
-            "import_error", "syntax_error", "name_error", "attribute_error",
-            "type_error", "value_error", "key_error", "file_not_found",
-            "indentation_error", "test_failure",
+            "import_error",
+            "syntax_error",
+            "name_error",
+            "attribute_error",
+            "type_error",
+            "value_error",
+            "key_error",
+            "file_not_found",
+            "indentation_error",
+            "test_failure",
         ]
         for error_type in known_types:
             prompt = agent._build_fix_prompt(error_type)
@@ -127,12 +144,13 @@ class TestBuildFixPrompt:
 
     def test_prompts_are_distinct(self, agent: SelfHealingAgent) -> None:
         """Each error type gets a different prompt."""
-        prompts = {agent._build_fix_prompt(t) for t in ["import_error", "syntax_error", "type_error"]}
+        prompts = {
+            agent._build_fix_prompt(t) for t in ["import_error", "syntax_error", "type_error"]
+        }
         assert len(prompts) == 3
 
 
 class TestParseFix:
-
     def test_parses_standard_format(self, agent: SelfHealingAgent) -> None:
         content = """Here's the fix:
 
@@ -168,15 +186,14 @@ y = 2
 
 
 class TestExtractErrorLocation:
-
     def test_extracts_python_traceback(self, agent: SelfHealingAgent) -> None:
-        error = '''Traceback (most recent call last):
+        error = """Traceback (most recent call last):
   File "src/config.py", line 42, in load_settings
     return Settings()
   File "src/config.py", line 10, in __init__
     self.db_url = os.environ["DB_URL"]
 KeyError: 'DB_URL'
-'''
+"""
         location = agent._extract_error_location(error)
         assert "src/config.py:42" in location
         assert "src/config.py:10" in location
@@ -201,7 +218,6 @@ E    +  where 42 = get_answer()"""
 
 
 class TestNewErrorTypePrompts:
-
     def test_attribute_error_has_prompt(self, agent: SelfHealingAgent) -> None:
         prompt = agent._build_fix_prompt("attribute_error")
         assert len(prompt) > 50

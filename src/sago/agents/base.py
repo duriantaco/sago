@@ -151,9 +151,7 @@ Please provide output in the following format:
             },
         ]
 
-    async def _call_llm(
-        self, messages: list[dict[str, str]], **kwargs: Any
-    ) -> dict[str, Any]:
+    async def _call_llm(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
         """Call LLM with retry logic.
 
         Args:

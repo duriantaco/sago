@@ -40,9 +40,8 @@ class TaskExecution:
 
     @property
     def success(self) -> bool:
-        return (
-            self.execution_result.success
-            and (self.verification_result is None or self.verification_result.success)
+        return self.execution_result.success and (
+            self.verification_result is None or self.verification_result.success
         )
 
 
@@ -181,7 +180,6 @@ class Orchestrator:
         self_heal: bool = False,
         use_cache: bool = False,
     ) -> WorkflowResult:
-
         self._setup_workflow(project_path, git_commit, self_heal, use_cache)
 
         start_time = datetime.now()
@@ -193,9 +191,12 @@ class Orchestrator:
             {
                 "project_path": str(project_path),
                 "flags": {
-                    "plan": plan, "execute": execute, "verify": verify,
+                    "plan": plan,
+                    "execute": execute,
+                    "verify": verify,
                     "use_cache": use_cache,
-                    "git_commit": git_commit, "self_heal": self_heal,
+                    "git_commit": git_commit,
+                    "self_heal": self_heal,
                 },
             },
         )
@@ -208,8 +209,10 @@ class Orchestrator:
 
             if execute:
                 result = await self._execute_tasks(
-                    all_tasks, project_path,
-                    verify=verify, max_retries=max_retries,
+                    all_tasks,
+                    project_path,
+                    verify=verify,
+                    max_retries=max_retries,
                     continue_on_failure=continue_on_failure,
                 )
                 tracer.emit(
@@ -226,8 +229,12 @@ class Orchestrator:
                 return result
 
             return WorkflowResult(
-                success=True, total_tasks=len(all_tasks), completed_tasks=0,
-                failed_tasks=0, skipped_tasks=len(all_tasks), total_duration=_elapsed(),
+                success=True,
+                total_tasks=len(all_tasks),
+                completed_tasks=0,
+                failed_tasks=0,
+                skipped_tasks=len(all_tasks),
+                total_duration=_elapsed(),
             )
 
         except ValueError as e:
@@ -240,21 +247,19 @@ class Orchestrator:
         finally:
             tracer.close()
 
-    async def _record_task_result(
-        self, task_exec: TaskExecution, project_path: Path
-    ) -> None:
+    async def _record_task_result(self, task_exec: TaskExecution, project_path: Path) -> None:
         if task_exec.success:
-            self.logger.info(
-                f"Task {task_exec.task.id} completed in {task_exec.duration:.1f}s"
-            )
+            self.logger.info(f"Task {task_exec.task.id} completed in {task_exec.duration:.1f}s")
             await self._update_state(project_path, task_exec.task, success=True)
         else:
             self.logger.error(
                 f"Task {task_exec.task.id} failed: {task_exec.execution_result.error}"
             )
             await self._update_state(
-                project_path, task_exec.task,
-                success=False, error=task_exec.execution_result.error,
+                project_path,
+                task_exec.task,
+                success=False,
+                error=task_exec.execution_result.error,
             )
 
     async def _execute_tasks(
@@ -265,7 +270,6 @@ class Orchestrator:
         max_retries: int = 2,
         continue_on_failure: bool = False,
     ) -> WorkflowResult:
-
         waves = self._resolve_waves(tasks)
         if isinstance(waves, WorkflowResult):
             return waves
@@ -277,26 +281,34 @@ class Orchestrator:
 
         try:
             completed, failed = await self._run_waves(
-                waves, project_path, task_executions,
-                verify=verify, max_retries=max_retries,
+                waves,
+                project_path,
+                task_executions,
+                verify=verify,
+                max_retries=max_retries,
                 continue_on_failure=continue_on_failure,
             )
             return self._build_workflow_result(
-                tasks, task_executions, completed, failed, start_time,
+                tasks,
+                task_executions,
+                completed,
+                failed,
+                start_time,
             )
         except Exception as e:
             self.logger.error(f"Task execution failed: {e}", exc_info=True)
             return WorkflowResult(
-                success=False, total_tasks=len(tasks),
-                completed_tasks=completed, failed_tasks=failed,
+                success=False,
+                total_tasks=len(tasks),
+                completed_tasks=completed,
+                failed_tasks=failed,
                 skipped_tasks=len(tasks) - completed - failed,
                 total_duration=(datetime.now() - start_time).total_seconds(),
-                task_executions=task_executions, error=str(e),
+                task_executions=task_executions,
+                error=str(e),
             )
 
-    def _resolve_waves(
-        self, tasks: list[Task]
-    ) -> list[list[Task]] | WorkflowResult:
+    def _resolve_waves(self, tasks: list[Task]) -> list[list[Task]] | WorkflowResult:
         try:
             waves = self.dependency_resolver.resolve(tasks)
             self.logger.info(f"Resolved {len(tasks)} tasks into {len(waves)} waves")
@@ -317,9 +329,7 @@ class Orchestrator:
         completed = 0
         failed = 0
         for wave_num, wave in enumerate(waves, 1):
-            self.logger.info(
-                f"Executing wave {wave_num}/{len(waves)} ({len(wave)} tasks)"
-            )
+            self.logger.info(f"Executing wave {wave_num}/{len(waves)} ({len(wave)} tasks)")
             wave_results = await self._execute_wave(
                 wave, project_path, verify=verify, max_retries=max_retries
             )
@@ -351,9 +361,12 @@ class Orchestrator:
             f"({failed} failed, {skipped} skipped) in {total_duration:.1f}s"
         )
         return WorkflowResult(
-            success=failed == 0, total_tasks=len(tasks),
-            completed_tasks=completed, failed_tasks=failed,
-            skipped_tasks=skipped, total_duration=total_duration,
+            success=failed == 0,
+            total_tasks=len(tasks),
+            completed_tasks=completed,
+            failed_tasks=failed,
+            skipped_tasks=skipped,
+            total_duration=total_duration,
             task_executions=task_executions,
         )
 
@@ -364,14 +377,10 @@ class Orchestrator:
         verify: bool = True,
         max_retries: int = 2,
     ) -> list[TaskExecution]:
-
         if self.config.enable_parallel_execution:
-            self.logger.info(
-                f"Executing {len(wave)} tasks in parallel"
-            )
+            self.logger.info(f"Executing {len(wave)} tasks in parallel")
             coros = [
-                self._execute_single_task(task, project_path, verify, max_retries)
-                for task in wave
+                self._execute_single_task(task, project_path, verify, max_retries) for task in wave
             ]
             results = await asyncio.gather(*coros, return_exceptions=True)
         else:
@@ -410,7 +419,6 @@ class Orchestrator:
     def _check_cache(
         self, task: Task, project_path: Path
     ) -> tuple[str | None, dict[str, str], TaskExecution | None]:
-        
         if self.cache is None:
             return None, {}, None
 
@@ -446,15 +454,19 @@ class Orchestrator:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
 
-        return task_hash, pre_exec_file_contents, TaskExecution(
-            task=task,
-            execution_result=AgentResult(
-                status=AgentStatus.SUCCESS,
-                output="Restored from cache",
-                metadata=cached.get("metadata", {}),
+        return (
+            task_hash,
+            pre_exec_file_contents,
+            TaskExecution(
+                task=task,
+                execution_result=AgentResult(
+                    status=AgentStatus.SUCCESS,
+                    output="Restored from cache",
+                    metadata=cached.get("metadata", {}),
+                ),
+                start_time=datetime.now(),
+                end_time=datetime.now(),
             ),
-            start_time=datetime.now(),
-            end_time=datetime.now(),
         )
 
     def _save_cache(
@@ -477,17 +489,19 @@ class Orchestrator:
                 except Exception:
                     pass
 
-        self.cache.set_cached_result(task_hash, {
-            "success": True,
-            "files": cached_files,
-            "metadata": metadata,
-        })
+        self.cache.set_cached_result(
+            task_hash,
+            {
+                "success": True,
+                "files": cached_files,
+                "metadata": metadata,
+            },
+        )
         self.logger.info(f"Cached result for task {task.id}")
 
     async def _execute_single_task(
         self, task: Task, project_path: Path, verify: bool = True, max_retries: int = 2
     ) -> TaskExecution:
-
         task_hash, pre_exec_contents, cached_exec = self._check_cache(task, project_path)
         if cached_exec is not None:
             tracer.emit("cache_hit", "Orchestrator", {"task_id": task.id})
@@ -529,8 +543,12 @@ class Orchestrator:
         return task_exec
 
     async def _retry_task(
-        self, task: Task, task_exec: TaskExecution,
-        project_path: Path, verify: bool, max_retries: int,
+        self,
+        task: Task,
+        task_exec: TaskExecution,
+        project_path: Path,
+        verify: bool,
+        max_retries: int,
     ) -> None:
         context = {"task": task, "project_path": project_path}
         previous_attempts: list[str] = []
@@ -545,13 +563,9 @@ class Orchestrator:
                 self.logger.warning(
                     f"Task {task.id} execution failed: {task_exec.execution_result.error}"
                 )
-                previous_attempts.append(
-                    f"Execution error: {task_exec.execution_result.error}"
-                )
+                previous_attempts.append(f"Execution error: {task_exec.execution_result.error}")
                 if self.enable_self_healing and attempt < max_retries:
-                    await self._attempt_self_heal(
-                        task, task_exec, project_path, previous_attempts
-                    )
+                    await self._attempt_self_heal(task, task_exec, project_path, previous_attempts)
                 continue
 
             if not verify:
@@ -562,32 +576,31 @@ class Orchestrator:
                 break
 
             self.logger.warning(
-                f"Task {task.id} verification failed: "
-                f"{task_exec.verification_result.error}"
+                f"Task {task.id} verification failed: {task_exec.verification_result.error}"
             )
-            previous_attempts.append(
-                f"Verification error: {task_exec.verification_result.error}"
-            )
+            previous_attempts.append(f"Verification error: {task_exec.verification_result.error}")
             if self.enable_self_healing and attempt < max_retries:
-                await self._attempt_self_heal(
-                    task, task_exec, project_path, previous_attempts
-                )
+                await self._attempt_self_heal(task, task_exec, project_path, previous_attempts)
 
     def _finalize_task(
-        self, task: Task, task_exec: TaskExecution,
-        task_hash: str | None, pre_exec_contents: dict[str, str],
+        self,
+        task: Task,
+        task_exec: TaskExecution,
+        task_hash: str | None,
+        pre_exec_contents: dict[str, str],
         project_path: Path,
     ) -> None:
         if task_exec.success and self.cache is not None and task_hash is not None:
             self._save_cache(
-                task, task_hash, pre_exec_contents,
-                task_exec.execution_result.metadata, project_path,
+                task,
+                task_hash,
+                pre_exec_contents,
+                task_exec.execution_result.metadata,
+                project_path,
             )
         if task_exec.success and self.git:
             files = task_exec.execution_result.metadata.get("files_modified", task.files)
-            committed = self.git.create_commit(
-                task_id=task.id, task_name=task.name, files=files
-            )
+            committed = self.git.create_commit(task_id=task.id, task_name=task.name, files=files)
             if committed:
                 self.logger.info(f"Git commit created for task {task.id}")
             else:
@@ -600,7 +613,6 @@ class Orchestrator:
         project_path: Path,
         previous_attempts: list[str] | None = None,
     ) -> None:
-
         error = (
             task_exec.execution_result.error
             or (task_exec.verification_result.error if task_exec.verification_result else None)
@@ -650,9 +662,7 @@ class Orchestrator:
                 file_path.write_text(content, encoding="utf-8")
                 self.logger.info(f"Self-healer wrote fix to {file_path_str}")
         else:
-            self.logger.warning(
-                f"Self-healer could not fix task {task.id}: {heal_result.error}"
-            )
+            self.logger.warning(f"Self-healer could not fix task {task.id}: {heal_result.error}")
 
     async def _update_state(
         self,

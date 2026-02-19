@@ -10,22 +10,25 @@ from sago.utils.compression import (
 )
 
 try:
-    import llmlingua
+    import importlib.util
 
-    HAS_LLMLINGUA = True
+    HAS_LLMLINGUA = importlib.util.find_spec("llmlingua") is not None
 except ImportError:
     HAS_LLMLINGUA = False
 
 
 @pytest.fixture
 def sample_text() -> str:
-    return """
+    return (
+        """
     This is a long piece of text that needs to be compressed.
     It contains multiple sentences and paragraphs.
     The compression system should reduce its size while maintaining meaning.
     This is important for managing LLM context windows efficiently.
     We want to save tokens and reduce costs.
-    """ * 10
+    """
+        * 10
+    )
 
 
 def test_passthrough_compressor(sample_text: str) -> None:

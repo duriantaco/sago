@@ -12,16 +12,35 @@ from sago.utils.tracer import tracer
 logger = logging.getLogger(__name__)
 
 _DEPENDENCY_FILES = [
-    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
-    "package.json", "Cargo.toml", "go.mod", "Gemfile",
-    "Makefile", "Dockerfile", "docker-compose.yml",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+    "package.json",
+    "Cargo.toml",
+    "go.mod",
+    "Gemfile",
+    "Makefile",
+    "Dockerfile",
+    "docker-compose.yml",
     ".env.example",
 ]
 
 _SKIP_DIRS = {
-    "__pycache__", ".git", ".planning", "node_modules", ".venv", "venv",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", "htmlcov", ".tox",
-    "dist", "build", "*.egg-info",
+    "__pycache__",
+    ".git",
+    ".planning",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "htmlcov",
+    ".tox",
+    "dist",
+    "build",
+    "*.egg-info",
 }
 
 
@@ -70,7 +89,9 @@ class ExecutorAgent(BaseAgent):
         context_parts.append(f"Name: {task.name}")
         context_parts.append(f"Phase: {task.phase_name}")
         context_parts.append(f"\nAction:\n{task.action}")
-        context_parts.append(f"\nFiles to create/modify:\n{chr(10).join(f'- {f}' for f in task.files)}")
+        context_parts.append(
+            f"\nFiles to create/modify:\n{chr(10).join(f'- {f}' for f in task.files)}"
+        )
         context_parts.append(f"\nVerification command: {task.verify}")
         context_parts.append(f"Done criteria: {task.done}")
 
@@ -83,70 +104,77 @@ class ExecutorAgent(BaseAgent):
             context_parts.append(dep_context)
 
         for file_path_str in task.files:
-            file_path = project_path / file_path_str
-            if file_path.exists():
-                try:
-                    content = file_path.read_text(encoding="utf-8")
-                    tracer.emit(
-                        "file_read",
-                        "ExecutorAgent",
-                        {
-                            "path": file_path_str,
-                            "size_bytes": len(content.encode("utf-8")),
-                            "content_preview": content[:2000],
-                        },
-                    )
-                    context_parts.append(f"\n=== EXISTING: {file_path_str} ===")
-                    context_parts.append(content)
-                except Exception as e:
-                    self.logger.warning(f"Could not read {file_path}: {e}")
+            self._read_file_into_context(
+                project_path / file_path_str,
+                file_path_str,
+                context_parts,
+                prefix="EXISTING: ",
+            )
 
         for context_file in ["PROJECT.md", "REQUIREMENTS.md", "IMPORTANT.md"]:
-            file_path = project_path / context_file
-            if file_path.exists():
-                try:
-                    content = file_path.read_text(encoding="utf-8")
-                    tracer.emit(
-                        "file_read",
-                        "ExecutorAgent",
-                        {
-                            "path": context_file,
-                            "size_bytes": len(content.encode("utf-8")),
-                            "content_preview": content[:2000],
-                        },
-                    )
-                    if len(content) > 4000:
-                        content = content[:4000] + "\n... (truncated)"
-                    context_parts.append(f"\n=== {context_file} ===")
-                    context_parts.append(content)
-                except Exception as e:
-                    self.logger.warning(f"Could not read {context_file}: {e}")
+            self._read_file_into_context(
+                project_path / context_file,
+                context_file,
+                context_parts,
+                truncate=4000,
+            )
 
         full_context = "\n".join(context_parts)
         return self._compress_context(full_context)
 
-    def _get_file_tree(self, project_path: Path, max_lines: int = 60) -> str:
-        lines: list[str] = []
+    def _read_file_into_context(
+        self,
+        file_path: Path,
+        display_name: str,
+        context_parts: list[str],
+        prefix: str = "",
+        truncate: int = 0,
+    ) -> None:
+        if not file_path.exists():
+            return
         try:
-            for root, dirs, files in os.walk(project_path):
-                dirs[:] = [
-                    d for d in sorted(dirs)
-                    if d not in _SKIP_DIRS and not d.endswith(".egg-info")
-                ]
-                rel = Path(root).relative_to(project_path)
-                depth = len(rel.parts)
-                indent = "  " * depth
-                if rel != Path("."):
-                    lines.append(f"{indent}{rel.name}/")
-                for f in sorted(files):
-                    if f.startswith(".") and f not in (".env.example", ".gitignore"):
-                        continue
-                    lines.append(f"{indent}  {f}")
-                if len(lines) >= max_lines:
-                    lines.append("  ... (truncated)")
-                    break
+            content = file_path.read_text(encoding="utf-8")
+            if truncate and len(content) > truncate:
+                content = content[:truncate] + "\n... (truncated)"
+            context_parts.append(f"\n=== {prefix}{display_name} ===\n{content}")
+            tracer.emit(
+                "file_read",
+                "ExecutorAgent",
+                {
+                    "path": display_name,
+                    "size_bytes": len(content.encode("utf-8")),
+                    "content_preview": content[:2000],
+                },
+            )
+        except Exception:
+            self.logger.debug(f"Could not read {display_name}")
+
+    def _walk_project_files(self, project_path: Path, max_lines: int) -> list[str]:
+        lines: list[str] = []
+        for root, dirs, files in os.walk(project_path):
+            dirs[:] = [
+                d for d in sorted(dirs) if d not in _SKIP_DIRS and not d.endswith(".egg-info")
+            ]
+            rel = Path(root).relative_to(project_path)
+            depth = len(rel.parts)
+            indent = "  " * depth
+            if rel != Path("."):
+                lines.append(f"{indent}{rel.name}/")
+            for f in sorted(files):
+                if f.startswith(".") and f not in (".env.example", ".gitignore"):
+                    continue
+                lines.append(f"{indent}  {f}")
+            if len(lines) >= max_lines:
+                lines.append("  ... (truncated)")
+                break
+        return lines
+
+    def _get_file_tree(self, project_path: Path, max_lines: int = 60) -> str:
+        try:
+            lines = self._walk_project_files(project_path, max_lines)
         except Exception as e:
             self.logger.debug(f"Could not build file tree: {e}")
+            return ""
         return "\n".join(lines)
 
     def _get_dependency_context(self, project_path: Path) -> str:

@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CostEstimate:
-
     total_tasks: int
     estimated_input_tokens: int
     estimated_output_tokens: int
@@ -50,7 +49,6 @@ class CostEstimate:
 
 
 class CostEstimator:
-
     MODEL_COSTS: dict[str, dict[str, float]] = {
         "gpt-4o": {"input": 2.50, "output": 10.00},
         "gpt-4o-mini": {"input": 0.15, "output": 0.60},
@@ -94,7 +92,6 @@ class CostEstimator:
         generate_plan: bool = False,
         verify: bool = True,
     ) -> CostEstimate:
-
         total_input_tokens = 0
         total_output_tokens = 0
         min_time = 0
@@ -140,10 +137,7 @@ class CostEstimator:
             breakdown_by_phase=breakdown,
         )
 
-    def _create_phase_breakdown(
-        self, tasks: list[Task], verify: bool
-    ) -> dict[str, dict[str, Any]]:
-
+    def _create_phase_breakdown(self, tasks: list[Task], verify: bool) -> dict[str, dict[str, Any]]:
         breakdown: dict[str, dict[str, Any]] = {}
 
         phases: dict[str, list[Task]] = {}

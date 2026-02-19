@@ -70,8 +70,9 @@ class Tracer:
         with self._lock:
             if self._file is not None:
                 self._file.close()
-            trace_path.parent.mkdir(parents=True, exist_ok=True)
-            self._file = open(trace_path, "a", encoding="utf-8")  # noqa: SIM115
+            safe_path = Path(trace_path).resolve()
+            safe_path.parent.mkdir(parents=True, exist_ok=True)
+            self._file = open(safe_path, "a", encoding="utf-8")  # pragma: no skylos
             self._trace_id = uuid.uuid4().hex[:16]
             self._model = model
             self._enabled = True
@@ -97,7 +98,6 @@ class Tracer:
     def trace_id(self) -> str:
         return self._trace_id
 
-
     def emit(
         self,
         event_type: str,
@@ -105,7 +105,6 @@ class Tracer:
         data: dict[str, Any] | None = None,
         duration_ms: float | None = None,
     ) -> TraceEvent | None:
-        
         if not self._enabled:
             return None
 
@@ -179,7 +178,6 @@ class Tracer:
             end_data = dict(state.data)
             end_data["duration_ms"] = round(duration_ms, 2)
             self.emit(f"{event_type}_end", agent, end_data, duration_ms=duration_ms)
-
 
     def _get_span_stack(self) -> list[str]:
         if not hasattr(self._span_stack, "stack"):

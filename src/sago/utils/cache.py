@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class SmartCache:
-
     def __init__(self, cache_dir: Path | None = None, ttl_hours: int = 24) -> None:
         self.cache_dir = cache_dir or Path.home() / ".sago" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -40,7 +39,7 @@ class SmartCache:
             return None
 
         try:
-            with open(cache_file, "r", encoding="utf-8") as f:
+            with open(cache_file, encoding="utf-8") as f:
                 cache_data = json.load(f)
 
             cached_time = datetime.fromisoformat(cache_data["timestamp"])
@@ -96,7 +95,7 @@ class SmartCache:
         expired = 0
         for cache_file in cache_files:
             try:
-                with open(cache_file, "r", encoding="utf-8") as f:
+                with open(cache_file, encoding="utf-8") as f:
                     cache_data = json.load(f)
                 cached_time = datetime.fromisoformat(cache_data["timestamp"])
                 if datetime.now() - cached_time > self.ttl:
@@ -116,7 +115,7 @@ class SmartCache:
         count = 0
         for cache_file in self.cache_dir.glob("*.json"):
             try:
-                with open(cache_file, "r", encoding="utf-8") as f:
+                with open(cache_file, encoding="utf-8") as f:
                     cache_data = json.load(f)
                 cached_time = datetime.fromisoformat(cache_data["timestamp"])
                 if datetime.now() - cached_time > self.ttl:
@@ -150,7 +149,6 @@ class CacheManager:
         execute_fn: Any,
         project_path: Path,
     ) -> dict[str, Any]:
-        
         if not self.should_use_cache(task_data, project_path):
             self.logger.info("Cache disabled for this task (files exist)")
             return execute_fn()
@@ -176,7 +174,7 @@ class CacheManager:
 
         for cache_file in cache_dir.glob("*.json"):
             try:
-                with open(cache_file, "r", encoding="utf-8") as f:
+                with open(cache_file, encoding="utf-8") as f:
                     cache_data = json.load(f)
 
                 result = cache_data.get("result", {})

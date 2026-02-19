@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
+
 import pytest
+
 from sago.utils.llm import LLMClient, LLMError
 
 
@@ -93,9 +95,7 @@ def test_llm_client_handles_errors(mock_completion: MagicMock, llm_client: LLMCl
 
 
 @patch("litellm.completion")
-def test_llm_client_custom_temperature(
-    mock_completion: MagicMock, llm_client: LLMClient
-) -> None:
+def test_llm_client_custom_temperature(mock_completion: MagicMock, llm_client: LLMClient) -> None:
     """Test using custom temperature."""
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]

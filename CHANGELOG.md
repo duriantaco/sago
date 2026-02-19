@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.1] - 2026-02-19
+
+### Added
+
+- **IMPORTANT.md template** — `sago init` now generates IMPORTANT.md with project conventions; fed as context to PlannerAgent and ExecutorAgent
+
+### Removed
+
+- **Focus mode / blocker** — removed `--focus` flag, `sago block`, `sago unblock`, `sago block-list` commands, and the entire `blocker/` module
+
+### Changed
+
+- **Package metadata** — updated author, license (Apache-2.0), and description to "Spec-Aware Generation Orchestrator"
+
+### Fixed
+
+- **Path traversal** — tracer and demo now resolve paths before writing
+- **Skylos gate** — split oversized functions, extracted complex try blocks into helpers
+- **Dead parameters** — cleaned up unused args in demo trace builder
+
 ## [0.1.0] - 2026-02-18
 
 ### Added

@@ -112,11 +112,7 @@ class MarkdownParser:
 
                 files = []
                 if files_elem is not None and files_elem.text:
-                    files = [
-                        f.strip()
-                        for f in files_elem.text.strip().split("\n")
-                        if f.strip()
-                    ]
+                    files = [f.strip() for f in files_elem.text.strip().split("\n") if f.strip()]
 
                 task = Task(
                     id=task_id,

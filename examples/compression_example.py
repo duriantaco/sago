@@ -24,7 +24,7 @@ def example_1_automatic_compression() -> None:
     short_text = "This is a short message."
     result = manager.auto_compress(short_text)
 
-    print(f"\nShort text compression:")
+    print("\nShort text compression:")
     print(f"  Method: {result.method}")
     print(f"  Original tokens: {result.original_tokens}")
     print(f"  Compressed tokens: {result.compressed_tokens}")
@@ -34,7 +34,7 @@ def example_1_automatic_compression() -> None:
     long_text = "\n\n".join([f"Paragraph {i}: " + "x" * 100 for i in range(10)])
     result = manager.auto_compress(long_text)
 
-    print(f"\nLong text compression:")
+    print("\nLong text compression:")
     print(f"  Method: {result.method}")
     print(f"  Original tokens: {result.original_tokens}")
     print(f"  Compressed tokens: {result.compressed_tokens}")
@@ -68,14 +68,14 @@ def example_2_sliding_window() -> None:
     compressor = SlidingWindowCompressor(window_size=4)
     result = compressor.compress(conversation)
 
-    print(f"\nConversation history management:")
+    print("\nConversation history management:")
     print(f"  Total exchanges: {result.metadata['total_chunks']}")
     print(f"  Kept exchanges: {result.metadata['kept_chunks']}")
     print(f"  Original tokens: {result.original_tokens}")
     print(f"  Compressed tokens: {result.compressed_tokens}")
     print(f"  Savings: {result.percentage_saved:.1f}%")
 
-    print(f"\nCompressed conversation:")
+    print("\nCompressed conversation:")
     print(result.compressed_text[:200] + "...")
 
 
@@ -118,7 +118,7 @@ def example_3_llmlingua_compression() -> None:
             target_tokens=50,  # Aggressive compression
         )
 
-        print(f"\nPrompt compression with LLMLingua:")
+        print("\nPrompt compression with LLMLingua:")
         print(f"  Original tokens: {result.original_tokens}")
         print(f"  Compressed tokens: {result.compressed_tokens}")
         print(f"  Compression ratio: {result.compression_ratio:.2f}")
@@ -136,7 +136,7 @@ def example_3_llmlingua_compression() -> None:
         compressed_cost = result.compressed_tokens * cost_per_token
         savings = original_cost - compressed_cost
 
-        print(f"\nCost analysis (GPT-4 pricing):")
+        print("\nCost analysis (GPT-4 pricing):")
         print(f"  Original cost: ${original_cost:.6f}")
         print(f"  Compressed cost: ${compressed_cost:.6f}")
         print(f"  Savings per request: ${savings:.6f}")
@@ -158,11 +158,14 @@ def example_4_context_manager_strategies() -> None:
 
     manager = ContextManager(max_context_tokens=1000)
 
-    text = """
+    text = (
+        """
     This is a sample document that needs compression.
     It contains multiple paragraphs and sentences.
     The content discusses various topics related to programming.
-    """ * 20  # Make it longer
+    """
+        * 20
+    )  # Make it longer
 
     # Compare different strategies
     strategies = ["passthrough", "sliding_window"]
@@ -216,7 +219,7 @@ def example_5_real_world_usage() -> None:
 
         result = manager.auto_compress(full_context)
 
-        print(f"\nCompression applied:")
+        print("\nCompression applied:")
         print(f"  Method: {result.method}")
         print(f"  Before: {result.original_tokens} tokens")
         print(f"  After: {result.compressed_tokens} tokens")

@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from tenacity import (
     retry,
@@ -20,7 +21,6 @@ class LLMRateLimitError(LLMError):
 
 
 class LLMClient:
-
     def __init__(
         self,
         model: str = "gpt-4o",
@@ -29,7 +29,6 @@ class LLMClient:
         max_tokens: int = 4096,
         max_retries: int = 3,
     ) -> None:
-
         self.model = model
         self.api_key = api_key
         self.temperature = temperature
@@ -50,10 +49,13 @@ class LLMClient:
         stream: bool = False,
         stream_callback: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
-
         try:
             return self._do_chat_completion(
-                messages, temperature, max_tokens, stream, stream_callback,
+                messages,
+                temperature,
+                max_tokens,
+                stream,
+                stream_callback,
             )
         except (LLMError, LLMRateLimitError):
             raise
@@ -125,7 +127,6 @@ class LLMClient:
         callback: Callable[[str], None] | None,
         litellm: Any,
     ) -> dict[str, Any]:
-
         response_text = ""
         finish_reason = None
         model_used = self.model
@@ -181,7 +182,6 @@ class LLMClient:
         }
 
     def count_tokens(self, text: str) -> int:
-
         try:
             import litellm
 
@@ -190,7 +190,6 @@ class LLMClient:
             return len(text) // 4
 
     def validate_messages(self, messages: list[dict[str, str]]) -> bool:
-
         if not isinstance(messages, list) or len(messages) == 0:
             return False
 

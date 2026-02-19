@@ -25,4 +25,4 @@ jobs:
         run: pip install skylos
 
       - name: Run Skylos Analysis
-        run: skylos . --gate --quality --danger --summary
+        run: skylos . --gate --quality --danger

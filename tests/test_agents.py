@@ -2,11 +2,9 @@
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sago.agents.base import AgentResult, AgentStatus
 from sago.agents.executor import ExecutorAgent
 from sago.agents.verifier import VerifierAgent
 from sago.core.config import Config
@@ -25,14 +23,13 @@ def sample_task() -> Task:
         name="Create module",
         files=["src/app.py"],
         action="Create the app module",
-        verify="python -c \"import src.app\"",
+        verify='python -c "import src.app"',
         done="Module imports successfully",
         phase_name="Phase 1",
     )
 
 
 class TestExecutorParseCode:
-
     @pytest.fixture
     def executor(self, config: Config) -> ExecutorAgent:
         return ExecutorAgent(config=config)
@@ -48,7 +45,7 @@ def main():
 """
         changes = executor._parse_generated_code(content)
         assert "src/app.py" in changes
-        assert 'def main():' in changes["src/app.py"]
+        assert "def main():" in changes["src/app.py"]
 
     def test_multiple_files(self, executor: ExecutorAgent) -> None:
         content = """
@@ -136,8 +133,13 @@ class TestVerifierRunVerification:
 
     def test_success_command(self, verifier: VerifierAgent, tmp_path: Path) -> None:
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="python3 -c \"print('ok')\"", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify="python3 -c \"print('ok')\"",
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert result["success"] is True
@@ -145,8 +147,13 @@ class TestVerifierRunVerification:
 
     def test_failing_command(self, verifier: VerifierAgent, tmp_path: Path) -> None:
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="python3 -c \"raise SystemExit(1)\"", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify='python3 -c "raise SystemExit(1)"',
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert result["success"] is False
@@ -154,17 +161,29 @@ class TestVerifierRunVerification:
 
     def test_empty_verify_command_succeeds(self, verifier: VerifierAgent, tmp_path: Path) -> None:
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify="",
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert result["success"] is True
         assert "No verification command" in result["stdout"]
 
-    def test_whitespace_verify_command_succeeds(self, verifier: VerifierAgent, tmp_path: Path) -> None:
+    def test_whitespace_verify_command_succeeds(
+        self, verifier: VerifierAgent, tmp_path: Path
+    ) -> None:
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="   ", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify="   ",
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert result["success"] is True
@@ -172,8 +191,13 @@ class TestVerifierRunVerification:
     def test_invalid_command_syntax(self, verifier: VerifierAgent, tmp_path: Path) -> None:
         """shlex.split should handle malformed commands gracefully."""
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="echo 'unterminated string", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify="echo 'unterminated string",
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert result["success"] is False
@@ -187,8 +211,13 @@ class TestVerifierRunVerification:
         verifier = VerifierAgent(config=short_timeout_config)
 
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="python3 -c \"import time; time.sleep(10)\"", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify='python3 -c "import time; time.sleep(10)"',
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert result["success"] is False
@@ -196,16 +225,26 @@ class TestVerifierRunVerification:
 
     def test_captures_stdout(self, verifier: VerifierAgent, tmp_path: Path) -> None:
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="python3 -c \"print('test_output')\"", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify="python3 -c \"print('test_output')\"",
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert "test_output" in result["stdout"]
 
     def test_captures_stderr(self, verifier: VerifierAgent, tmp_path: Path) -> None:
         task = Task(
-            id="1.1", name="test", files=[], action="",
-            verify="python3 -c \"import sys; sys.stderr.write('err_out')\"", done="", phase_name="",
+            id="1.1",
+            name="test",
+            files=[],
+            action="",
+            verify="python3 -c \"import sys; sys.stderr.write('err_out')\"",
+            done="",
+            phase_name="",
         )
         result = asyncio.run(verifier._run_verification(task, tmp_path))
         assert "err_out" in result["stderr"]

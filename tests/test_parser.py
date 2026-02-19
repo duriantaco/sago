@@ -1,5 +1,7 @@
 from pathlib import Path
+
 import pytest
+
 from sago.core.parser import MarkdownParser, Phase, Task
 
 
@@ -222,9 +224,7 @@ def test_task_to_dict() -> None:
 
 def test_phase_to_dict() -> None:
     """Test converting Phase to dictionary."""
-    task = Task(
-        id="1", name="Task", files=[], action="", verify="", done="", phase_name=""
-    )
+    task = Task(id="1", name="Task", files=[], action="", verify="", done="", phase_name="")
     phase = Phase(name="Phase 1", description="Description", tasks=[task])
 
     phase_dict = phase.to_dict()

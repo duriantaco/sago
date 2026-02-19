@@ -16,13 +16,13 @@ sago status [--path PATH]            # Show project status
 sago plan [--path PATH]              # Generate PLAN.md from requirements
 sago execute [--path PATH]           # Execute tasks from PLAN.md
 sago run [--path PATH]               # Full workflow: plan + execute + verify
-sago block / unblock / block-list    # Manual website blocker commands
+sago trace [--path PATH]             # Open dashboard for a past trace
 
 # Key flags for `sago run`
-#   --focus          Block distracting sites during workflow
 #   --compress       Enable context compression
 #   --cache/--no-cache  Smart caching (on by default)
 #   --auto-retry     Auto-fix failed tasks
+#   --trace          Open live dashboard in browser
 #   --git-commit     Auto-commit after each task
 #   --dry-run        Estimate cost without executing
 
@@ -51,11 +51,10 @@ mypy src/                            # Type check (strict mode)
   - `planner.py`: Generates PLAN.md from requirements
   - `executor.py`: Executes tasks (writes code), compresses context when enabled
   - `verifier.py`: Validates task completion
-  - `orchestrator.py`: Coordinates plan->execute->verify workflow with focus mode, caching, and parallel/sequential execution
+  - `orchestrator.py`: Coordinates plan->execute->verify workflow with caching and parallel/sequential execution
   - `dependencies.py`: `DependencyResolver` using topological sort for wave-based execution and circular dependency detection
   - `self_healing.py`: Recovery logic for failed tasks (--auto-retry)
-- **`blocker/`** -- Cross-platform `/etc/hosts` manipulation for focus mode and manual website blocking (requires sudo)
-- **`utils/`** -- LLM client (LiteLLM wrapper), context compression (SlidingWindow/LLMLingua/Passthrough strategies), smart task caching, git integration, cost estimation, elevation handling
+- **`utils/`** -- LLM client (LiteLLM wrapper), context compression (SlidingWindow/LLMLingua/Passthrough strategies), smart task caching, git integration, cost estimation
 - **`templates/`** -- 7 markdown templates (PROJECT, REQUIREMENTS, ROADMAP, STATE, PLAN, SUMMARY, IMPORTANT) generated on `sago init`
 
 ### Key Design Patterns
@@ -71,11 +70,10 @@ mypy src/                            # Type check (strict mode)
 2. `DependencyResolver` analyzes tasks -> creates execution waves
 3. `ExecutorAgent` processes each task (compresses context if --compress enabled)
 4. `VerifierAgent` runs verification commands per task
-5. `Orchestrator` coordinates all phases, manages focus mode, caching, and STATE.md updates
+5. `Orchestrator` coordinates all phases, manages caching, and STATE.md updates
 
 ### Integrated Features
 
-- **Focus Mode** (`--focus`): Blocks distracting sites via /etc/hosts during workflow, auto-unblocks in finally block
 - **Smart Caching** (`--cache`): Hashes task definition + file contents, skips re-execution on cache hit
 - **Context Compression** (`--compress`): Opt-in, compresses LLM context via SlidingWindow before executor LLM calls
 - **Auto-retry** (`--auto-retry`): Self-healing agent attempts to fix failed tasks
@@ -91,4 +89,4 @@ mypy src/                            # Type check (strict mode)
 ## Configuration
 
 The app loads settings from environment variables / `.env` file. Key settings:
-`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`, `PLANNING_DIR` (default `.planning`), `ENABLE_GIT_COMMITS`, `ENABLE_PARALLEL_EXECUTION` (default false), `ENABLE_COMPRESSION` (default false), `MAX_CONTEXT_TOKENS` (default 100000), `FOCUS_DOMAINS`, `LOG_LEVEL`
+`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`, `PLANNING_DIR` (default `.planning`), `ENABLE_GIT_COMMITS`, `ENABLE_PARALLEL_EXECUTION` (default false), `ENABLE_COMPRESSION` (default false), `MAX_CONTEXT_TOKENS` (default 100000), `LOG_LEVEL`

@@ -1,13 +1,12 @@
 """Tests for smart caching system."""
 
 import json
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from sago.utils.cache import CacheManager, SmartCache
+from sago.utils.cache import SmartCache
 
 
 @pytest.fixture
@@ -95,11 +94,15 @@ def test_cache_expired_returns_none(cache_dir: Path) -> None:
 
     cache_file = cache_dir / "expired.json"
     expired_time = (datetime.now() - timedelta(hours=2)).isoformat()
-    cache_file.write_text(json.dumps({
-        "timestamp": expired_time,
-        "task_hash": "expired",
-        "result": {"success": True},
-    }))
+    cache_file.write_text(
+        json.dumps(
+            {
+                "timestamp": expired_time,
+                "task_hash": "expired",
+                "result": {"success": True},
+            }
+        )
+    )
 
     assert cache.get_cached_result("expired") is None
     assert not cache_file.exists()
@@ -148,11 +151,15 @@ def test_cleanup_expired(cache_dir: Path) -> None:
     cache.set_cached_result("valid", {"success": True})
     expired_file = cache_dir / "old.json"
     expired_time = (datetime.now() - timedelta(hours=48)).isoformat()
-    expired_file.write_text(json.dumps({
-        "timestamp": expired_time,
-        "task_hash": "old",
-        "result": {"success": True},
-    }))
+    expired_file.write_text(
+        json.dumps(
+            {
+                "timestamp": expired_time,
+                "task_hash": "old",
+                "result": {"success": True},
+            }
+        )
+    )
 
     count = cache.cleanup_expired()
     assert count == 1

@@ -128,7 +128,7 @@ async def example_2_execute_plan():
     )
 
     # Show results
-    print(f"\nWorkflow completed!")
+    print("\nWorkflow completed!")
     print(f"  Status: {'✓ SUCCESS' if result.success else '✗ FAILED'}")
     print(f"  Total tasks: {result.total_tasks}")
     print(f"  Completed: {result.completed_tasks}")
@@ -198,7 +198,7 @@ A simple Python calculator library.
     )
 
     # Show results
-    print(f"\nComplete workflow finished!")
+    print("\nComplete workflow finished!")
     print(f"  Success: {result.success}")
     print(f"  Completed: {result.completed_tasks}/{result.total_tasks}")
     print(f"  Failed: {result.failed_tasks}")
@@ -261,9 +261,7 @@ async def example_4_error_handling():
                     print(f"  Retries attempted: {task_exec.retry_count}")
                     print(f"  Execution error: {task_exec.execution_result.error}")
                     if task_exec.verification_result:
-                        print(
-                            f"  Verification error: {task_exec.verification_result.error}"
-                        )
+                        print(f"  Verification error: {task_exec.verification_result.error}")
 
     except Exception as e:
         print(f"✗ Exception caught: {e}")
@@ -332,9 +330,9 @@ async def example_5_dependency_visualization():
         task_ids = [task.id for task in wave]
         print(f"\n  Wave {i}: {', '.join(task_ids)}")
         if len(wave) > 1:
-            print(f"    → These tasks run in PARALLEL")
+            print("    → These tasks run in PARALLEL")
         else:
-            print(f"    → This task runs SEQUENTIALLY")
+            print("    → This task runs SEQUENTIALLY")
 
 
 async def main():

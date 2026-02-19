@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 class PlannerAgent(BaseAgent):
-
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.parser = MarkdownParser()
@@ -51,7 +50,6 @@ class PlannerAgent(BaseAgent):
         )
 
     def _load_project_context(self, project_path: Path) -> dict[str, str]:
-
         context = {}
 
         required_files = ["PROJECT.md", "REQUIREMENTS.md"]
@@ -102,7 +100,6 @@ class PlannerAgent(BaseAgent):
         return context
 
     async def _generate_plan_xml(self, project_context: dict[str, str]) -> str:
-
         context_str = "\n\n".join(
             [f"=== {name} ===\n{content}" for name, content in project_context.items() if content]
         )
@@ -173,7 +170,6 @@ Generate a complete, executable plan now:""",
         return content[xml_start:xml_end]
 
     def _validate_plan(self, plan_xml: str) -> None:
-
         if "<phases>" not in plan_xml or "</phases>" not in plan_xml:
             raise ValueError("Plan missing <phases> tags")
 

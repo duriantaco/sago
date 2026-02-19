@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class SelfHealingAgent(BaseAgent):
-
     MAX_FIX_ATTEMPTS = 3
 
     _FIX_PROMPTS: dict[str, str] = {
@@ -114,9 +113,13 @@ class SelfHealingAgent(BaseAgent):
         self.logger.info(f"Error type: {error_type}")
 
         fix_result = await self._generate_fix(
-            task=task, original_code=original_code,
-            error=error, error_type=error_type, project_path=project_path,
-            verify_stdout=verify_stdout, verify_stderr=verify_stderr,
+            task=task,
+            original_code=original_code,
+            error=error,
+            error_type=error_type,
+            project_path=project_path,
+            verify_stdout=verify_stdout,
+            verify_stderr=verify_stderr,
             previous_attempts=previous_attempts,
         )
 
@@ -181,16 +184,12 @@ class SelfHealingAgent(BaseAgent):
     def _extract_error_location(self, error: str) -> str:
         lines: list[str] = []
 
-        tb_matches = re.finditer(
-            r'File "([^"]+)",\s*line\s*(\d+)(?:,\s*in\s*(\S+))?', error
-        )
+        tb_matches = re.finditer(r'File "([^"]+)",\s*line\s*(\d+)(?:,\s*in\s*(\S+))?', error)
         for m in tb_matches:
             filepath, lineno, func = m.group(1), m.group(2), m.group(3) or ""
             lines.append(f"  {filepath}:{lineno} in {func}")
 
-        error_line_match = re.search(
-            r"^(\w*Error\w*:\s*.+)$", error, re.MULTILINE
-        )
+        error_line_match = re.search(r"^(\w*Error\w*:\s*.+)$", error, re.MULTILINE)
         if error_line_match:
             lines.append(f"  Error: {error_line_match.group(1).strip()}")
 
@@ -239,7 +238,9 @@ class SelfHealingAgent(BaseAgent):
             parts.append(f"\n=== VERIFICATION STDERR ===\n{stderr_text}")
 
         if previous_attempts:
-            parts.append("\n=== PREVIOUS FIX ATTEMPTS (these did NOT work, try something different) ===")
+            parts.append(
+                "\n=== PREVIOUS FIX ATTEMPTS (these did NOT work, try something different) ==="
+            )
             for i, attempt in enumerate(previous_attempts, 1):
                 parts.append(f"\nAttempt {i}:\n{attempt[:1500]}")
 
@@ -297,10 +298,15 @@ class SelfHealingAgent(BaseAgent):
         verify_stderr: str = "",
         previous_attempts: list[str] | None = None,
     ) -> dict[str, Any]:
-
         context = self._build_fix_context(
-            task, original_code, error, error_type, project_path,
-            verify_stdout, verify_stderr, previous_attempts,
+            task,
+            original_code,
+            error,
+            error_type,
+            project_path,
+            verify_stdout,
+            verify_stderr,
+            previous_attempts,
         )
         messages = self._build_fix_messages(context, error_type)
 
@@ -334,7 +340,6 @@ class SelfHealingAgent(BaseAgent):
         return fixes
 
     def should_attempt_fix(self, error: str, task: Task) -> bool:
-
         fixable_errors = [
             "import",
             "syntax",

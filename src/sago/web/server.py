@@ -29,7 +29,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-
     def _serve_html(self) -> None:
         try:
             content = _DASHBOARD_HTML.read_bytes()

@@ -103,9 +103,7 @@ def test_is_sago_project(tmp_path: Path, project_manager: ProjectManager) -> Non
     assert project_manager.is_sago_project(sago_project) is True
 
 
-def test_template_variable_substitution(
-    tmp_path: Path, project_manager: ProjectManager
-) -> None:
+def test_template_variable_substitution(tmp_path: Path, project_manager: ProjectManager) -> None:
     project_path = tmp_path / "var_project"
     template_vars = {"project_name": "MyAwesomeProject"}
 
@@ -117,9 +115,7 @@ def test_template_variable_substitution(
 
 
 @pytest.mark.asyncio
-async def test_generate_from_prompt(
-    tmp_path: Path, project_manager: ProjectManager
-) -> None:
+async def test_generate_from_prompt(tmp_path: Path, project_manager: ProjectManager) -> None:
     project_path = tmp_path / "prompt_project"
     project_manager.init_project(project_path, project_name="todo-app")
 
@@ -173,6 +169,4 @@ async def test_generate_from_prompt_parse_error(
         mock_cls.return_value = mock_client
 
         with pytest.raises(ValueError, match="missing expected files"):
-            await project_manager.generate_from_prompt(
-                "bad prompt", project_path, "bad-project"
-            )
+            await project_manager.generate_from_prompt("bad prompt", project_path, "bad-project")

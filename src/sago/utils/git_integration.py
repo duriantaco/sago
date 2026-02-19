@@ -1,7 +1,6 @@
 import logging
 import subprocess
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class GitIntegration:
             return True
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 ["git", "init"],
                 cwd=self.project_path,
                 capture_output=True,
@@ -59,13 +58,17 @@ class GitIntegration:
             subprocess.run(
                 ["git", "add", file_path],
                 cwd=self.project_path,
-                capture_output=True, text=True, check=True,
+                capture_output=True,
+                text=True,
+                check=True,
             )
 
         status_result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=self.project_path,
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
 
         if not status_result.stdout.strip():
@@ -78,15 +81,15 @@ class GitIntegration:
         subprocess.run(
             ["git", "commit", "-m", message],
             cwd=self.project_path,
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
 
         self.logger.info(f"Created commit for task {task_id}")
         return True
 
-    def _generate_commit_message(
-        self, task_id: str, task_name: str, files: list[str]
-    ) -> str:
+    def _generate_commit_message(self, task_id: str, task_name: str, files: list[str]) -> str:
         """Generate commit message for task.
 
         Args:
@@ -100,7 +103,7 @@ class GitIntegration:
         lines = [
             f"✅ {task_id}: {task_name}",
             "",
-            f"Files modified:",
+            "Files modified:",
         ]
 
         for file_path in files:

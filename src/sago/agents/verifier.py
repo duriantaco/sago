@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class VerifierAgent(BaseAgent):
-
     async def execute(self, context: dict[str, Any]) -> AgentResult:
         try:
             return await self._do_execute(context)
@@ -57,10 +56,7 @@ class VerifierAgent(BaseAgent):
             },
         )
 
-    async def _run_verification(
-        self, task: Task, project_path: Path
-    ) -> dict[str, Any]:
-
+    async def _run_verification(self, task: Task, project_path: Path) -> dict[str, Any]:
         if not task.verify or not task.verify.strip():
             self.logger.warning(f"Task {task.id} has no verification command")
             return {
@@ -90,9 +86,7 @@ class VerifierAgent(BaseAgent):
             self.logger.error(f"Invalid verify command syntax: {e}")
             return None
 
-    async def _run_subprocess(
-        self, cmd: list[str], project_path: Path
-    ) -> dict[str, Any]:
+    async def _run_subprocess(self, cmd: list[str], project_path: Path) -> dict[str, Any]:
         start = time.monotonic()
         command_str = " ".join(cmd)
         try:
@@ -105,13 +99,11 @@ class VerifierAgent(BaseAgent):
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=self.config.verify_timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
             duration_s = time.monotonic() - start
-            self.logger.error(
-                f"Verification timed out after {self.config.verify_timeout}s"
-            )
+            self.logger.error(f"Verification timed out after {self.config.verify_timeout}s")
             tracer.emit(
                 "verify_run",
                 "VerifierAgent",
@@ -155,8 +147,7 @@ class VerifierAgent(BaseAgent):
         success = returncode == 0
 
         self.logger.info(
-            f"Verification {'passed' if success else 'failed'} "
-            f"(exit code: {returncode})"
+            f"Verification {'passed' if success else 'failed'} (exit code: {returncode})"
         )
         tracer.emit(
             "verify_run",

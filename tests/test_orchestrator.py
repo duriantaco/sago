@@ -175,12 +175,10 @@ async def test_run_workflow_with_plan_generation(
 
         mock_planner.side_effect = create_plan
 
-        with patch.object(
-            orchestrator.executor, "execute", new_callable=AsyncMock
-        ) as mock_executor, patch.object(
-            orchestrator.verifier, "execute", new_callable=AsyncMock
-        ) as mock_verifier:
-
+        with (
+            patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
+            patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
+        ):
             mock_executor.return_value = AgentResult(
                 status=AgentStatus.SUCCESS, output="Executed", metadata={}
             )
@@ -205,12 +203,10 @@ async def test_run_workflow_plan_exists(
 ):
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    with patch.object(
-        orchestrator.executor, "execute", new_callable=AsyncMock
-    ) as mock_executor, patch.object(
-        orchestrator.verifier, "execute", new_callable=AsyncMock
-    ) as mock_verifier:
-
+    with (
+        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
+        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
+    ):
         mock_executor.return_value = AgentResult(
             status=AgentStatus.SUCCESS, output="Executed", metadata={}
         )
@@ -250,12 +246,10 @@ async def test_execute_single_task_with_retry(orchestrator: Orchestrator):
         status=AgentStatus.SUCCESS, output="Success", error=None, metadata={}
     )
 
-    with patch.object(
-        orchestrator.executor, "execute", new_callable=AsyncMock
-    ) as mock_executor, patch.object(
-        orchestrator.verifier, "execute", new_callable=AsyncMock
-    ) as mock_verifier:
-
+    with (
+        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
+        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
+    ):
         mock_executor.side_effect = [fail_result, success_result]
         mock_verifier.return_value = AgentResult(
             status=AgentStatus.SUCCESS, output="Verified", metadata={}
@@ -321,12 +315,10 @@ async def test_execute_wave_parallel(orchestrator: Orchestrator):
         ),
     ]
 
-    with patch.object(
-        orchestrator.executor, "execute", new_callable=AsyncMock
-    ) as mock_executor, patch.object(
-        orchestrator.verifier, "execute", new_callable=AsyncMock
-    ) as mock_verifier:
-
+    with (
+        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
+        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
+    ):
         mock_executor.return_value = AgentResult(
             status=AgentStatus.SUCCESS, output="Executed", metadata={}
         )
@@ -390,12 +382,10 @@ async def test_workflow_continue_on_failure(
 ):
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    with patch.object(
-        orchestrator.executor, "execute", new_callable=AsyncMock
-    ) as mock_executor, patch.object(
-        orchestrator.verifier, "execute", new_callable=AsyncMock
-    ) as mock_verifier:
-
+    with (
+        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
+        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
+    ):
         mock_executor.side_effect = [
             AgentResult(status=AgentStatus.FAILURE, output="", error="Failed", metadata={}),
             AgentResult(status=AgentStatus.SUCCESS, output="Success", metadata={}),
@@ -425,10 +415,7 @@ async def test_workflow_stop_on_failure(
     """Test workflow stops on first failure."""
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    with patch.object(
-        orchestrator.executor, "execute", new_callable=AsyncMock
-    ) as mock_executor:
-
+    with patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor:
         mock_executor.return_value = AgentResult(
             status=AgentStatus.FAILURE, output="", error="Failed", metadata={}
         )
@@ -452,12 +439,10 @@ async def test_workflow_without_verification(
 ):
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    with patch.object(
-        orchestrator.executor, "execute", new_callable=AsyncMock
-    ) as mock_executor, patch.object(
-        orchestrator.verifier, "execute", new_callable=AsyncMock
-    ) as mock_verifier:
-
+    with (
+        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
+        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
+    ):
         mock_executor.return_value = AgentResult(
             status=AgentStatus.SUCCESS, output="Executed", metadata={}
         )

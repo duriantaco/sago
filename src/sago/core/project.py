@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectManager:
-
     TEMPLATE_FILES = [
         "PROJECT.md",
         "REQUIREMENTS.md",
@@ -47,9 +46,7 @@ class ProjectManager:
         project_name = project_name or project_path.name
 
         if project_path.exists() and not overwrite:
-            existing_templates = [
-                f for f in self.TEMPLATE_FILES if (project_path / f).exists()
-            ]
+            existing_templates = [f for f in self.TEMPLATE_FILES if (project_path / f).exists()]
             if existing_templates:
                 raise FileExistsError(
                     f"Project already exists at {project_path}. "
@@ -146,9 +143,7 @@ class ProjectManager:
 
         missing = expected - set(files.keys())
         if missing:
-            raise ValueError(
-                f"LLM output missing expected files: {', '.join(sorted(missing))}"
-            )
+            raise ValueError(f"LLM output missing expected files: {', '.join(sorted(missing))}")
 
         return files
 
@@ -160,9 +155,7 @@ class ProjectManager:
         file_path = Path(project_path) / filename
         file_path.write_text(content, encoding="utf-8")
 
-    def update_file(
-        self, project_path: Path, filename: str, updates: dict[str, str]
-    ) -> None:
+    def update_file(self, project_path: Path, filename: str, updates: dict[str, str]) -> None:
         content = self.read_file(project_path, filename)
 
         for search, replace in updates.items():

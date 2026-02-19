@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CompressionResult:
-
     original_text: str
     compressed_text: str
     original_tokens: int
@@ -29,7 +28,6 @@ class CompressionResult:
 
 
 class CompressorInterface(ABC):
-
     @abstractmethod
     def compress(
         self,
@@ -38,7 +36,6 @@ class CompressorInterface(ABC):
         instruction: str | None = None,
         **kwargs: Any,
     ) -> CompressionResult:
-        
         pass
 
     @abstractmethod
@@ -47,14 +44,12 @@ class CompressorInterface(ABC):
 
 
 class LLMLinguaCompressor(CompressorInterface):
-
     def __init__(
         self,
         model_name: str = "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank",
         device: str = "cpu",
         target_token_ratio: float = 0.5,
     ) -> None:
-
         self.model_name = model_name
         self.device = device
         self.target_token_ratio = target_token_ratio
@@ -72,9 +67,7 @@ class LLMLinguaCompressor(CompressorInterface):
                 )
                 logger.info(f"Loaded LLMLingua compressor: {self.model_name}")
             except ImportError:
-                raise ImportError(
-                    "llmlingua not installed. Run: pip install llmlingua"
-                ) from None
+                raise ImportError("llmlingua not installed. Run: pip install llmlingua") from None
             except Exception as e:
                 raise RuntimeError(f"Failed to load LLMLingua: {e}") from e
 
@@ -89,7 +82,6 @@ class LLMLinguaCompressor(CompressorInterface):
         rate: float | None = None,
         **kwargs: Any,
     ) -> CompressionResult:
-       
         compressor = self._get_compressor()
         original_tokens = self.estimate_tokens(text)
 
@@ -100,7 +92,9 @@ class LLMLinguaCompressor(CompressorInterface):
                 rate = self.target_token_ratio
 
         try:
-            return self._do_compress(compressor, text, original_tokens, rate, instruction, question, **kwargs)
+            return self._do_compress(
+                compressor, text, original_tokens, rate, instruction, question, **kwargs
+            )
         except Exception as e:
             logger.error(f"LLMLingua compression failed: {e}")
             return CompressionResult(
@@ -114,8 +108,14 @@ class LLMLinguaCompressor(CompressorInterface):
             )
 
     def _do_compress(
-        self, compressor: Any, text: str, original_tokens: int,
-        rate: float, instruction: str | None, question: str | None, **kwargs: Any,
+        self,
+        compressor: Any,
+        text: str,
+        original_tokens: int,
+        rate: float,
+        instruction: str | None,
+        question: str | None,
+        **kwargs: Any,
     ) -> CompressionResult:
         result = compressor.compress_prompt(
             context=text,
@@ -149,7 +149,6 @@ class LLMLinguaCompressor(CompressorInterface):
 
 
 class SlidingWindowCompressor(CompressorInterface):
-
     def __init__(self, window_size: int = 10) -> None:
         self.window_size = window_size
 
@@ -160,7 +159,6 @@ class SlidingWindowCompressor(CompressorInterface):
         delimiter: str = "\n\n",
         **kwargs: Any,
     ) -> CompressionResult:
-        
         chunks = text.split(delimiter)
         windowed_chunks = chunks[-self.window_size :]
         compressed_text = delimiter.join(windowed_chunks)
@@ -188,7 +186,6 @@ class SlidingWindowCompressor(CompressorInterface):
 
 
 class PassthroughCompressor(CompressorInterface):
-
     def compress(
         self,
         text: str,
@@ -211,14 +208,12 @@ class PassthroughCompressor(CompressorInterface):
 
 
 class ContextManager:
-
     def __init__(
         self,
         max_context_tokens: int = 4000,
         compression_threshold: float = 0.8,
         default_compressor: str = "llmlingua",
     ) -> None:
-
         self.max_context_tokens = max_context_tokens
         self.compression_threshold = compression_threshold
         self.default_compressor = default_compressor
@@ -252,7 +247,6 @@ class ContextManager:
         target_tokens: int | None = None,
         **kwargs: Any,
     ) -> CompressionResult:
-
         strategy = strategy or self.default_compressor
 
         if strategy == "llmlingua":

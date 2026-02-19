@@ -281,9 +281,21 @@ def test_complex_dependency_graph():
 
     tasks = [
         Task(id="1", name="A", phase_name="P1", files=["a.py"], action="", verify="", done=""),
-        Task(id="2", name="B", phase_name="P1", files=["b.py", "a.py"], action="", verify="", done=""),
-        Task(id="3", name="C", phase_name="P1", files=["c.py", "a.py"], action="", verify="", done=""),
-        Task(id="4", name="D", phase_name="P1", files=["d.py", "b.py", "c.py"], action="", verify="", done=""),
+        Task(
+            id="2", name="B", phase_name="P1", files=["b.py", "a.py"], action="", verify="", done=""
+        ),
+        Task(
+            id="3", name="C", phase_name="P1", files=["c.py", "a.py"], action="", verify="", done=""
+        ),
+        Task(
+            id="4",
+            name="D",
+            phase_name="P1",
+            files=["d.py", "b.py", "c.py"],
+            action="",
+            verify="",
+            done="",
+        ),
     ]
 
     waves = resolver.resolve(tasks)

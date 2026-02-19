@@ -77,10 +77,10 @@ def init(
         _do_init(project_name, path, interactive, overwrite, prompt=prompt)
     except FileExistsError as e:
         console.print(f"[red]{e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def _get_completed_task_ids(state_file: Path) -> list[str]:
@@ -93,9 +93,7 @@ def _get_completed_task_ids(state_file: Path) -> list[str]:
     return re.findall(r"\[(?:✓|✗)\]\s+(\d+\.\d+):", content)
 
 
-def _show_task_progress(
-    phases: list, completed_tasks: list[str], detailed: bool
-) -> None:
+def _show_task_progress(phases: list, completed_tasks: list[str], detailed: bool) -> None:
     """Display task progress summary and optional per-phase breakdown."""
     completed_set = set(completed_tasks)
     total_tasks = sum(len(phase.tasks) for phase in phases)
@@ -174,7 +172,7 @@ def status(
         _do_status(project_path, detailed)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def _do_plan(project_path: Path, force: bool) -> None:
@@ -207,7 +205,9 @@ def _do_plan(project_path: Path, force: bool) -> None:
         progress.add_task(description="Generating plan...", total=None)
         result = asyncio.run(
             orchestrator.run_workflow(
-                project_path=project_path, plan=True, execute=False,
+                project_path=project_path,
+                plan=True,
+                execute=False,
             )
         )
 
@@ -239,12 +239,16 @@ def plan(
         _do_plan(project_path, force)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def _do_execute(
-    project_path: Path, verify: bool, max_retries: int,
-    continue_on_failure: bool, compress: bool, trace: bool = False,
+    project_path: Path,
+    verify: bool,
+    max_retries: int,
+    continue_on_failure: bool,
+    compress: bool,
+    trace: bool = False,
 ) -> None:
     manager = ProjectManager(config)
 
@@ -286,8 +290,11 @@ def _do_execute(
         task = progress.add_task(description="Running workflow...", total=None)
         result = asyncio.run(
             orchestrator.run_workflow(
-                project_path=project_path, plan=False, execute=True,
-                verify=verify, max_retries=max_retries,
+                project_path=project_path,
+                plan=False,
+                execute=True,
+                verify=verify,
+                max_retries=max_retries,
                 continue_on_failure=continue_on_failure,
             )
         )
@@ -339,7 +346,7 @@ def execute(
         _do_execute(project_path, verify, max_retries, continue_on_failure, compress, trace)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 def _show_workflow_result(result: Any) -> None:
@@ -375,9 +382,7 @@ def _validate_project(project_path: Path) -> None:
         raise typer.Exit(1)
 
 
-def _run_dry_run(
-    project_path: Path, generate_plan: bool, verify: bool
-) -> None:
+def _run_dry_run(project_path: Path, generate_plan: bool, verify: bool) -> None:
     """Show cost estimate and prompt for confirmation. Exits if cancelled."""
     console.print("\n[bold cyan]Cost Estimation Mode[/bold cyan]\n")
 
@@ -391,9 +396,7 @@ def _run_dry_run(
     all_tasks = [task for phase in phases for task in phase.tasks]
 
     estimator = CostEstimator(model=config.llm_model)
-    estimate = estimator.estimate_workflow(
-        all_tasks, generate_plan=generate_plan, verify=verify
-    )
+    estimate = estimator.estimate_workflow(all_tasks, generate_plan=generate_plan, verify=verify)
     console.print(estimate)
 
     console.print("\n[bold]Proceed with execution?[/bold]")
@@ -403,8 +406,11 @@ def _run_dry_run(
 
 
 def _print_enabled_flags(
-    use_cache: bool, git_commit: bool, auto_retry: bool,
-    compress: bool, trace: bool = False,
+    use_cache: bool,
+    git_commit: bool,
+    auto_retry: bool,
+    compress: bool,
+    trace: bool = False,
 ) -> None:
     """Print which optional flags are enabled."""
     for flag, label in [
@@ -419,10 +425,17 @@ def _print_enabled_flags(
 
 
 def _do_run(
-    project_path: Path, verify: bool, max_retries: int,
-    continue_on_failure: bool, force_plan: bool, dry_run: bool,
-    use_cache: bool, git_commit: bool, auto_retry: bool,
-    compress: bool, trace: bool = False,
+    project_path: Path,
+    verify: bool,
+    max_retries: int,
+    continue_on_failure: bool,
+    force_plan: bool,
+    dry_run: bool,
+    use_cache: bool,
+    git_commit: bool,
+    auto_retry: bool,
+    compress: bool,
+    trace: bool = False,
 ) -> None:
     _validate_project(project_path)
 
@@ -466,10 +479,14 @@ def _do_run(
         task = progress.add_task(description="Executing workflow...", total=None)
         result = asyncio.run(
             orchestrator.run_workflow(
-                project_path=project_path, plan=generate_plan,
-                execute=True, verify=verify, max_retries=max_retries,
+                project_path=project_path,
+                plan=generate_plan,
+                execute=True,
+                verify=verify,
+                max_retries=max_retries,
                 continue_on_failure=continue_on_failure,
-                git_commit=git_commit, self_heal=auto_retry,
+                git_commit=git_commit,
+                self_heal=auto_retry,
                 use_cache=use_cache,
             )
         )
@@ -505,12 +522,21 @@ def run(
 ) -> None:
     try:
         _do_run(
-            project_path, verify, max_retries, continue_on_failure,
-            force_plan, dry_run, use_cache, git_commit, auto_retry, compress, trace,
+            project_path,
+            verify,
+            max_retries,
+            continue_on_failure,
+            force_plan,
+            dry_run,
+            use_cache,
+            git_commit,
+            auto_retry,
+            compress,
+            trace,
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @app.command(name="trace")
@@ -547,9 +573,387 @@ def trace_cmd(
         console.print("\n[dim]Dashboard stopped[/dim]")
 
 
-def _generate_demo_trace() -> Path:
-    """Generate a realistic demo trace file with streaming delay."""
+def _build_planning_events(evt: Any) -> list[dict]:
+    """Build demo events for the planning phase."""
+    return [
+        evt(0, "workflow_start", "Orchestrator", {"project_path": "/home/user/weather-app"}),
+        evt(
+            0.5,
+            "file_read",
+            "PlannerAgent",
+            {
+                "path": "PROJECT.md",
+                "size_bytes": 1247,
+                "content_preview": "# Weather Dashboard\n\nA modern weather dashboard built with "
+                "FastAPI and PostgreSQL.\n\n## Tech Stack\n- Python 3.12\n- FastAPI + Uvicorn\n"
+                "- PostgreSQL + SQLAlchemy\n- Jinja2 templates\n- OpenWeatherMap API",
+            },
+        ),
+        evt(
+            0.8,
+            "file_read",
+            "PlannerAgent",
+            {
+                "path": "REQUIREMENTS.md",
+                "size_bytes": 892,
+                "content_preview": "# Requirements\n\n* [x] **REQ-1:** Display current weather for "
+                "user's location\n* [ ] **REQ-2:** Show 5-day forecast with min/max temperatures\n"
+                "* [ ] **REQ-3:** Allow searching by city name with autocomplete",
+            },
+        ),
+        evt(
+            1.0,
+            "file_read",
+            "PlannerAgent",
+            {
+                "path": "STATE.md",
+                "size_bytes": 340,
+                "content_preview": "# State\n\n## Completed Tasks\nNone yet.",
+            },
+        ),
+        evt(
+            1.2,
+            "llm_call",
+            "PlannerAgent",
+            {
+                "model": "gpt-4o",
+                "prompt_tokens": 2140,
+                "completion_tokens": 1860,
+                "total_tokens": 4000,
+                "duration_s": 6.3,
+                "prompt_preview": "Based on the project context below, generate a detailed PLAN.md "
+                "with atomic tasks.\n\nProject Context:\n=== PROJECT.md ===\n# Weather Dashboard\n"
+                "A modern weather dashboard built with FastAPI...",
+                "response_preview": '<phases>\n  <phase name="Phase 1: Foundation">\n    '
+                '<task id="1.1">\n      <name>Create project structure and config</name>...',
+            },
+            duration_ms=6300,
+        ),
+        evt(
+            7.6,
+            "file_write",
+            "PlannerAgent",
+            {
+                "path": "PLAN.md",
+                "size_bytes": 4120,
+                "content_preview": '# PLAN.md\n\n```xml\n<phases>\n  <phase name="Phase 1">\n'
+                '    <task id="1.1">\n      <name>Create project structure and config</name>...',
+            },
+        ),
+    ]
+
+
+def _build_foundation_task_events(evt: Any) -> list[dict]:
+    """Build demo events for Phase 1 foundation tasks (1.1 + 1.2)."""
+    return [
+        # Task 1.1: Create project structure
+        evt(
+            8.0,
+            "task_start",
+            "Orchestrator",
+            {
+                "task_id": "1.1",
+                "task_name": "Create project structure and config",
+                "phase": "Phase 1: Foundation",
+                "files": ["src/config.py", "src/__init__.py", "pyproject.toml"],
+            },
+        ),
+        evt(
+            8.5,
+            "file_read",
+            "ExecutorAgent",
+            {
+                "path": "PROJECT.md",
+                "size_bytes": 1247,
+                "content_preview": "# Weather Dashboard\n\nA modern weather dashboard...",
+            },
+        ),
+        evt(
+            8.7,
+            "file_read",
+            "ExecutorAgent",
+            {
+                "path": "REQUIREMENTS.md",
+                "size_bytes": 892,
+                "content_preview": "# Requirements\n\n* [x] **REQ-1:** Display current weather...",
+            },
+        ),
+        evt(
+            9.0,
+            "llm_call",
+            "ExecutorAgent",
+            {
+                "model": "gpt-4o",
+                "prompt_tokens": 1850,
+                "completion_tokens": 1420,
+                "total_tokens": 3270,
+                "duration_s": 5.1,
+                "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 1.1\n"
+                "Name: Create project structure and config\n\nAction:\nSet up FastAPI project...",
+                "response_preview": "=== FILE: src/config.py ===\n```python\nfrom pydantic_settings "
+                "import BaseSettings\nfrom functools import lru_cache\n\nclass Settings(BaseSettings):"
+                '\n    app_name: str = "Weather Dashboard"\n```',
+            },
+            duration_ms=5100,
+        ),
+        evt(14.2, "file_write", "ExecutorAgent", {"path": "src/config.py", "size_bytes": 380}),
+        evt(14.4, "file_write", "ExecutorAgent", {"path": "src/__init__.py", "size_bytes": 42}),
+        evt(14.6, "file_write", "ExecutorAgent", {"path": "pyproject.toml", "size_bytes": 610}),
+        evt(
+            15.0,
+            "verify_run",
+            "VerifierAgent",
+            {
+                "command": "python -c \"from src.config import Settings; print('OK')\"",
+                "exit_code": 0,
+                "success": True,
+                "duration_s": 0.8,
+                "stdout": "OK\n",
+                "stderr": "",
+            },
+        ),
+        evt(
+            15.9,
+            "task_end",
+            "Orchestrator",
+            {
+                "task_id": "1.1",
+                "task_name": "Create project structure and config",
+                "success": True,
+                "duration_s": 7.9,
+            },
+        ),
+        # Task 1.2: Database models
+        evt(
+            16.0,
+            "task_start",
+            "Orchestrator",
+            {
+                "task_id": "1.2",
+                "task_name": "Set up database models",
+                "phase": "Phase 1: Foundation",
+                "files": ["src/models.py", "src/database.py"],
+            },
+        ),
+        evt(
+            16.5,
+            "file_read",
+            "ExecutorAgent",
+            {
+                "path": "src/config.py",
+                "size_bytes": 380,
+            },
+        ),
+        evt(
+            17.0,
+            "llm_call",
+            "ExecutorAgent",
+            {
+                "model": "gpt-4o",
+                "prompt_tokens": 2100,
+                "completion_tokens": 1650,
+                "total_tokens": 3750,
+                "duration_s": 5.8,
+                "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 1.2\n"
+                "Name: Set up database models\n\nAction:\nCreate SQLAlchemy models...",
+                "response_preview": "=== FILE: src/models.py ===\n```python\nfrom sqlalchemy import "
+                "Column, Integer, String, Float, DateTime, func\nfrom sqlalchemy.orm import "
+                "DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n```",
+            },
+            duration_ms=5800,
+        ),
+        evt(22.9, "file_write", "ExecutorAgent", {"path": "src/models.py", "size_bytes": 720}),
+        evt(23.1, "file_write", "ExecutorAgent", {"path": "src/database.py", "size_bytes": 510}),
+        evt(
+            23.5,
+            "verify_run",
+            "VerifierAgent",
+            {
+                "command": "python -c \"from src.models import Base, SearchHistory; print('OK')\"",
+                "exit_code": 0,
+                "success": True,
+                "duration_s": 0.6,
+                "stdout": "OK\n",
+                "stderr": "",
+            },
+        ),
+        evt(
+            24.2,
+            "task_end",
+            "Orchestrator",
+            {
+                "task_id": "1.2",
+                "task_name": "Set up database models",
+                "success": True,
+                "duration_s": 8.2,
+            },
+        ),
+    ]
+
+
+def _build_retry_task_events(evt: Any) -> list[dict]:
+    """Build demo events for task 2.1 (weather API client with failure + retry)."""
+    return [
+        evt(
+            24.5,
+            "task_start",
+            "Orchestrator",
+            {
+                "task_id": "2.1",
+                "task_name": "Build weather API client",
+                "phase": "Phase 2: Core Features",
+                "files": ["src/weather.py", "tests/test_weather.py"],
+            },
+        ),
+        evt(25.0, "file_read", "ExecutorAgent", {"path": "src/config.py", "size_bytes": 380}),
+        evt(
+            25.5,
+            "llm_call",
+            "ExecutorAgent",
+            {
+                "model": "gpt-4o",
+                "prompt_tokens": 2400,
+                "completion_tokens": 2100,
+                "total_tokens": 4500,
+                "duration_s": 7.2,
+                "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 2.1\n"
+                "Name: Build weather API client\n\nAction:\nCreate an async HTTP client...",
+                "response_preview": "=== FILE: src/weather.py ===\n```python\nimport httpx\nfrom "
+                "dataclasses import dataclass\n\n@dataclass\nclass WeatherData:\n    city: str\n```",
+            },
+            duration_ms=7200,
+        ),
+        evt(32.8, "file_write", "ExecutorAgent", {"path": "src/weather.py", "size_bytes": 1240}),
+        evt(
+            33.0,
+            "file_write",
+            "ExecutorAgent",
+            {
+                "path": "tests/test_weather.py",
+                "size_bytes": 890,
+            },
+        ),
+        # First verify FAILS
+        evt(
+            33.5,
+            "verify_run",
+            "VerifierAgent",
+            {
+                "command": "python -m pytest tests/test_weather.py -v",
+                "exit_code": 1,
+                "success": False,
+                "duration_s": 2.1,
+                "stdout": "tests/test_weather.py::test_get_current_weather FAILED\n\n"
+                "E   ModuleNotFoundError: No module named 'src.config'",
+                "stderr": "FAILED tests/test_weather.py::test_get_current_weather - "
+                "ModuleNotFoundError",
+            },
+        ),
+        # Retry LLM call
+        evt(
+            35.8,
+            "llm_call",
+            "ExecutorAgent",
+            {
+                "model": "gpt-4o",
+                "prompt_tokens": 2800,
+                "completion_tokens": 1900,
+                "total_tokens": 4700,
+                "duration_s": 6.4,
+                "prompt_preview": "The previous attempt failed with:\nModuleNotFoundError: "
+                "No module named 'src.config'\n\nFix the test to use proper imports...",
+                "response_preview": "=== FILE: tests/test_weather.py ===\n```python\nimport sys\n"
+                "sys.path.insert(0, '.')\nimport pytest\n```",
+            },
+            duration_ms=6400,
+        ),
+        evt(
+            42.3,
+            "file_write",
+            "ExecutorAgent",
+            {
+                "path": "tests/test_weather.py",
+                "size_bytes": 1120,
+            },
+        ),
+        # Second verify PASSES
+        evt(
+            42.8,
+            "verify_run",
+            "VerifierAgent",
+            {
+                "command": "python -m pytest tests/test_weather.py -v",
+                "exit_code": 0,
+                "success": True,
+                "duration_s": 1.8,
+                "stdout": "tests/test_weather.py::test_get_current_weather PASSED\n\n1 passed",
+                "stderr": "",
+            },
+        ),
+        evt(
+            44.7,
+            "task_end",
+            "Orchestrator",
+            {
+                "task_id": "2.1",
+                "task_name": "Build weather API client",
+                "success": True,
+                "duration_s": 20.2,
+                "retry_count": 1,
+            },
+        ),
+        evt(
+            45.0,
+            "workflow_end",
+            "Orchestrator",
+            {
+                "success": True,
+                "total_tasks": 3,
+                "completed": 3,
+                "failed": 0,
+                "duration_s": 45.0,
+            },
+        ),
+    ]
+
+
+def _build_task_events(evt: Any) -> list[dict]:
+    """Build demo events for task execution (3 tasks, one with retry)."""
+    return _build_foundation_task_events(evt) + _build_retry_task_events(evt)
+
+
+def _build_demo_events(evt: Any) -> list[dict]:
+    """Build the list of demo trace events for a weather-app project."""
+    return _build_planning_events(evt) + _build_task_events(evt)
+
+
+def _stream_demo_events(
+    events: list[dict],
+    tmp: Path,
+    base: Any,
+) -> None:
+    """Write demo events to file with delays to simulate a live run."""
     import json
+    import time as _time
+    from datetime import datetime as dt_cls
+
+    safe_tmp = Path(tmp).resolve()
+    prev_t = 0.0
+    for e in events:
+        offset = 0.0
+        ts_val = e.get("timestamp", "")
+        try:
+            offset = (dt_cls.fromisoformat(ts_val) - base).total_seconds()
+        except (ValueError, TypeError):
+            pass
+        delay = min(max(offset - prev_t, 0.05), 2.0)
+        prev_t = offset
+        _time.sleep(delay)
+        with open(safe_tmp, "a", encoding="utf-8") as f:  # pragma: no skylos
+            f.write(json.dumps(e) + "\n")
+
+
+def _generate_demo_trace() -> Path:
     import tempfile
     import threading
     import uuid
@@ -576,248 +980,10 @@ def _generate_demo_trace() -> Path:
             "duration_ms": duration_ms,
         }
 
-    events = [
-        # Workflow start
-        evt(0, "workflow_start", "Orchestrator", {"project_path": "/home/user/weather-app"}),
-        # Planning phase - file reads
-        evt(0.5, "file_read", "PlannerAgent", {
-            "path": "PROJECT.md",
-            "size_bytes": 1247,
-            "content_preview": "# Weather Dashboard\n\nA modern weather dashboard built with FastAPI and PostgreSQL.\n\n## Tech Stack\n- Python 3.12\n- FastAPI + Uvicorn\n- PostgreSQL + SQLAlchemy\n- Jinja2 templates\n- OpenWeatherMap API",
-        }),
-        evt(0.8, "file_read", "PlannerAgent", {
-            "path": "REQUIREMENTS.md",
-            "size_bytes": 892,
-            "content_preview": "# Requirements\n\n* [x] **REQ-1:** Display current weather for user's location\n* [ ] **REQ-2:** Show 5-day forecast with min/max temperatures\n* [ ] **REQ-3:** Allow searching by city name with autocomplete\n* [ ] **REQ-4:** Store search history in PostgreSQL",
-        }),
-        evt(1.0, "file_read", "PlannerAgent", {
-            "path": "STATE.md",
-            "size_bytes": 340,
-            "content_preview": "# State\n\n## Completed Tasks\nNone yet.\n\n## Current Phase\nPlanning",
-        }),
-        # Planning LLM call
-        evt(1.2, "llm_call", "PlannerAgent", {
-            "model": "gpt-4o",
-            "prompt_tokens": 2140,
-            "completion_tokens": 1860,
-            "total_tokens": 4000,
-            "duration_s": 6.3,
-            "prompt_preview": "Based on the project context below, generate a detailed PLAN.md with atomic tasks.\n\nProject Context:\n=== PROJECT.md ===\n# Weather Dashboard\nA modern weather dashboard built with FastAPI...",
-            "response_preview": "<phases>\n  <phase name=\"Phase 1: Foundation\">\n    <task id=\"1.1\">\n      <name>Create project structure and config</name>\n      <files>src/config.py, src/__init__.py, pyproject.toml</files>\n      <action>Set up project with FastAPI, SQLAlchemy, environment config...</action>\n      <verify>python -c \"from src.config import Settings; print('OK')\"</verify>\n      <done>Config module imports and validates settings</done>\n    </task>\n    <task id=\"1.2\">\n      <name>Set up database models</name>...",
-        }, duration_ms=6300),
-        # Plan file write
-        evt(7.6, "file_write", "PlannerAgent", {
-            "path": "PLAN.md",
-            "size_bytes": 4120,
-            "content_preview": "# PLAN.md\n\n```xml\n<phases>\n  <phase name=\"Phase 1: Foundation\">\n    <task id=\"1.1\">\n      <name>Create project structure and config</name>\n      <files>src/config.py, src/__init__.py, pyproject.toml</files>\n      <action>Set up FastAPI project structure with Pydantic settings...</action>\n      <verify>python -c \"from src.config import Settings; print('OK')\"</verify>\n      <done>Config module imports successfully</done>\n    </task>",
-        }),
-        # Task 1.1
-        evt(8.0, "task_start", "Orchestrator", {
-            "task_id": "1.1",
-            "task_name": "Create project structure and config",
-            "phase": "Phase 1: Foundation",
-            "files": ["src/config.py", "src/__init__.py", "pyproject.toml"],
-        }),
-        evt(8.5, "file_read", "ExecutorAgent", {
-            "path": "PROJECT.md",
-            "size_bytes": 1247,
-            "content_preview": "# Weather Dashboard\n\nA modern weather dashboard...",
-        }),
-        evt(8.7, "file_read", "ExecutorAgent", {
-            "path": "REQUIREMENTS.md",
-            "size_bytes": 892,
-            "content_preview": "# Requirements\n\n* [x] **REQ-1:** Display current weather...",
-        }),
-        evt(9.0, "llm_call", "ExecutorAgent", {
-            "model": "gpt-4o",
-            "prompt_tokens": 1850,
-            "completion_tokens": 1420,
-            "total_tokens": 3270,
-            "duration_s": 5.1,
-            "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 1.1\nName: Create project structure and config\nPhase: Phase 1: Foundation\n\nAction:\nSet up FastAPI project structure with Pydantic settings for API keys, database URL...",
-            "response_preview": "=== FILE: src/config.py ===\n```python\nfrom pydantic_settings import BaseSettings\nfrom functools import lru_cache\n\nclass Settings(BaseSettings):\n    app_name: str = \"Weather Dashboard\"\n    database_url: str = \"postgresql://localhost/weather\"\n    openweather_api_key: str\n    debug: bool = False\n\n    class Config:\n        env_file = \".env\"\n\n@lru_cache\ndef get_settings() -> Settings:\n    return Settings()\n```",
-        }, duration_ms=5100),
-        evt(14.2, "file_write", "ExecutorAgent", {
-            "path": "src/config.py",
-            "size_bytes": 380,
-            "content_preview": "from pydantic_settings import BaseSettings\nfrom functools import lru_cache\n\nclass Settings(BaseSettings):\n    app_name: str = \"Weather Dashboard\"\n    database_url: str = \"postgresql://localhost/weather\"\n    openweather_api_key: str\n    debug: bool = False\n\n    class Config:\n        env_file = \".env\"\n\n@lru_cache\ndef get_settings() -> Settings:\n    return Settings()",
-        }),
-        evt(14.4, "file_write", "ExecutorAgent", {
-            "path": "src/__init__.py",
-            "size_bytes": 42,
-            "content_preview": "__version__ = \"0.1.0\"",
-        }),
-        evt(14.6, "file_write", "ExecutorAgent", {
-            "path": "pyproject.toml",
-            "size_bytes": 610,
-            "content_preview": "[project]\nname = \"weather-dashboard\"\nversion = \"0.1.0\"\nrequires-python = \">=3.12\"\ndependencies = [\n    \"fastapi>=0.109\",\n    \"uvicorn[standard]\",\n    \"sqlalchemy>=2.0\",\n    \"pydantic-settings\",\n    \"httpx\",\n    \"jinja2\",\n]",
-        }),
-        evt(15.0, "verify_run", "VerifierAgent", {
-            "command": "python -c \"from src.config import Settings; print('OK')\"",
-            "exit_code": 0,
-            "success": True,
-            "duration_s": 0.8,
-            "stdout": "OK\n",
-            "stderr": "",
-        }),
-        evt(15.9, "task_end", "Orchestrator", {
-            "task_id": "1.1",
-            "task_name": "Create project structure and config",
-            "success": True,
-            "duration_s": 7.9,
-        }),
-        # Task 1.2
-        evt(16.0, "task_start", "Orchestrator", {
-            "task_id": "1.2",
-            "task_name": "Set up database models",
-            "phase": "Phase 1: Foundation",
-            "files": ["src/models.py", "src/database.py"],
-        }),
-        evt(16.5, "file_read", "ExecutorAgent", {
-            "path": "src/config.py",
-            "size_bytes": 380,
-            "content_preview": "from pydantic_settings import BaseSettings...",
-        }),
-        evt(17.0, "llm_call", "ExecutorAgent", {
-            "model": "gpt-4o",
-            "prompt_tokens": 2100,
-            "completion_tokens": 1650,
-            "total_tokens": 3750,
-            "duration_s": 5.8,
-            "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 1.2\nName: Set up database models\n\nAction:\nCreate SQLAlchemy models for weather data and search history...",
-            "response_preview": "=== FILE: src/models.py ===\n```python\nfrom sqlalchemy import Column, Integer, String, Float, DateTime, func\nfrom sqlalchemy.orm import DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n\nclass SearchHistory(Base):\n    __tablename__ = \"search_history\"\n    id = Column(Integer, primary_key=True)\n    city = Column(String(100), nullable=False)\n    country = Column(String(10))\n    searched_at = Column(DateTime, server_default=func.now())\n```",
-        }, duration_ms=5800),
-        evt(22.9, "file_write", "ExecutorAgent", {
-            "path": "src/models.py",
-            "size_bytes": 720,
-            "content_preview": "from sqlalchemy import Column, Integer, String, Float, DateTime, func\nfrom sqlalchemy.orm import DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n\nclass SearchHistory(Base):\n    __tablename__ = \"search_history\"\n    id = Column(Integer, primary_key=True)\n    city = Column(String(100), nullable=False)\n    country = Column(String(10))\n    searched_at = Column(DateTime, server_default=func.now())",
-        }),
-        evt(23.1, "file_write", "ExecutorAgent", {
-            "path": "src/database.py",
-            "size_bytes": 510,
-            "content_preview": "from sqlalchemy import create_engine\nfrom sqlalchemy.orm import sessionmaker\nfrom src.config import get_settings\nfrom src.models import Base\n\nengine = create_engine(get_settings().database_url)\nSessionLocal = sessionmaker(bind=engine)\n\ndef init_db():\n    Base.metadata.create_all(bind=engine)",
-        }),
-        evt(23.5, "verify_run", "VerifierAgent", {
-            "command": "python -c \"from src.models import Base, SearchHistory; print('OK')\"",
-            "exit_code": 0,
-            "success": True,
-            "duration_s": 0.6,
-            "stdout": "OK\n",
-            "stderr": "",
-        }),
-        evt(24.2, "task_end", "Orchestrator", {
-            "task_id": "1.2",
-            "task_name": "Set up database models",
-            "success": True,
-            "duration_s": 8.2,
-        }),
-        # Task 2.1 - with a failure + retry
-        evt(24.5, "task_start", "Orchestrator", {
-            "task_id": "2.1",
-            "task_name": "Build weather API client",
-            "phase": "Phase 2: Core Features",
-            "files": ["src/weather.py", "tests/test_weather.py"],
-        }),
-        evt(25.0, "file_read", "ExecutorAgent", {
-            "path": "src/config.py",
-            "size_bytes": 380,
-            "content_preview": "from pydantic_settings import BaseSettings...",
-        }),
-        evt(25.5, "llm_call", "ExecutorAgent", {
-            "model": "gpt-4o",
-            "prompt_tokens": 2400,
-            "completion_tokens": 2100,
-            "total_tokens": 4500,
-            "duration_s": 7.2,
-            "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 2.1\nName: Build weather API client\n\nAction:\nCreate an async HTTP client for OpenWeatherMap API...",
-            "response_preview": "=== FILE: src/weather.py ===\n```python\nimport httpx\nfrom dataclasses import dataclass\nfrom src.config import get_settings\n\n@dataclass\nclass WeatherData:\n    city: str\n    temp_c: float\n    description: str\n    humidity: int\n    wind_speed: float\n    icon: str\n\nasync def get_current_weather(city: str) -> WeatherData:\n    settings = get_settings()\n    async with httpx.AsyncClient() as client:\n        resp = await client.get(\n            \"https://api.openweathermap.org/data/2.5/weather\",\n            params={\"q\": city, \"appid\": settings.openweather_api_key, \"units\": \"metric\"},\n        )\n        resp.raise_for_status()\n        data = resp.json()\n    ...\n```",
-        }, duration_ms=7200),
-        evt(32.8, "file_write", "ExecutorAgent", {
-            "path": "src/weather.py",
-            "size_bytes": 1240,
-            "content_preview": "import httpx\nfrom dataclasses import dataclass\nfrom src.config import get_settings\n\n@dataclass\nclass WeatherData:\n    city: str\n    temp_c: float\n    description: str\n    humidity: int\n    wind_speed: float\n    icon: str",
-        }),
-        evt(33.0, "file_write", "ExecutorAgent", {
-            "path": "tests/test_weather.py",
-            "size_bytes": 890,
-            "content_preview": "import pytest\nfrom unittest.mock import AsyncMock, patch\nfrom src.weather import get_current_weather, WeatherData\n\n@pytest.mark.asyncio\nasync def test_get_current_weather():\n    mock_response = {...}",
-        }),
-        # First verify fails
-        evt(33.5, "verify_run", "VerifierAgent", {
-            "command": "python -m pytest tests/test_weather.py -v",
-            "exit_code": 1,
-            "success": False,
-            "duration_s": 2.1,
-            "stdout": "tests/test_weather.py::test_get_current_weather FAILED\n\nE   ModuleNotFoundError: No module named 'src.config'",
-            "stderr": "FAILED tests/test_weather.py::test_get_current_weather - ModuleNotFoundError",
-        }),
-        # Retry - second LLM call
-        evt(35.8, "llm_call", "ExecutorAgent", {
-            "model": "gpt-4o",
-            "prompt_tokens": 2800,
-            "completion_tokens": 1900,
-            "total_tokens": 4700,
-            "duration_s": 6.4,
-            "prompt_preview": "The previous attempt failed with:\nModuleNotFoundError: No module named 'src.config'\n\nFix the test to use proper imports and mock the settings...",
-            "response_preview": "=== FILE: tests/test_weather.py ===\n```python\nimport sys\nsys.path.insert(0, '.')\nimport pytest\nfrom unittest.mock import AsyncMock, patch, MagicMock\nfrom src.weather import get_current_weather, WeatherData\n...\n```",
-        }, duration_ms=6400),
-        evt(42.3, "file_write", "ExecutorAgent", {
-            "path": "tests/test_weather.py",
-            "size_bytes": 1120,
-            "content_preview": "import sys\nsys.path.insert(0, '.')\nimport pytest\nfrom unittest.mock import AsyncMock, patch, MagicMock\nfrom src.weather import get_current_weather, WeatherData",
-        }),
-        # Second verify passes
-        evt(42.8, "verify_run", "VerifierAgent", {
-            "command": "python -m pytest tests/test_weather.py -v",
-            "exit_code": 0,
-            "success": True,
-            "duration_s": 1.8,
-            "stdout": "tests/test_weather.py::test_get_current_weather PASSED\n\n1 passed in 0.42s",
-            "stderr": "",
-        }),
-        evt(44.7, "task_end", "Orchestrator", {
-            "task_id": "2.1",
-            "task_name": "Build weather API client",
-            "success": True,
-            "duration_s": 20.2,
-            "retry_count": 1,
-        }),
-        # Workflow end
-        evt(45.0, "workflow_end", "Orchestrator", {
-            "success": True,
-            "total_tasks": 3,
-            "completed": 3,
-            "failed": 0,
-            "duration_s": 45.0,
-        }),
-    ]
-
-    def _stream_events() -> None:
-        """Write events with delays to simulate a live run."""
-        import time as _time
-
-        prev_t = 0.0
-        for e in events:
-            # Calculate delay from timestamp offsets
-            offset = 0.0
-            for k, v in e.items():
-                if k == "timestamp":
-                    try:
-                        dt = datetime.fromisoformat(v)
-                        offset = (dt - base).total_seconds()
-                    except (ValueError, TypeError):
-                        pass
-            delay = min(max(offset - prev_t, 0.05), 2.0)  # cap delay at 2s for demo speed
-            prev_t = offset
-            _time.sleep(delay)
-            with open(tmp, "a", encoding="utf-8") as f:
-                f.write(json.dumps(e) + "\n")
-
-    # Create empty file so server can start
+    events = _build_demo_events(evt)
     tmp.write_text("", encoding="utf-8")
 
-    # Stream events in background thread
-    t = threading.Thread(target=_stream_events, daemon=True)
+    t = threading.Thread(target=_stream_demo_events, args=(events, tmp, base), daemon=True)
     t.start()
 
     console.print("[bold cyan]Demo mode[/bold cyan] — streaming sample trace events")
