@@ -54,6 +54,11 @@ class Config(BaseSettings):
         default=False,
         description="Execute independent tasks in parallel (may cause file conflicts)",
     )
+    max_concurrent_tasks: int = Field(
+        default=5,
+        gt=0,
+        description="Maximum number of tasks to run concurrently when parallel execution is on",
+    )
     task_timeout: int = Field(
         default=300,
         gt=0,

@@ -160,7 +160,7 @@ Generate a complete, executable plan now:""",
 
         response = await self._call_llm(messages)
 
-        content = response["content"]
+        content: str = response["content"]
         xml_start = content.find("<phases>")
         xml_end = content.find("</phases>") + len("</phases>")
 

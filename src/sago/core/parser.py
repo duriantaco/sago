@@ -98,7 +98,7 @@ class MarkdownParser:
         for phase_elem in root.findall("phase"):
             phase_name = phase_elem.get("name", "Unknown Phase")
             desc_elem = phase_elem.find("description")
-            phase_description = desc_elem.text.strip() if desc_elem is not None else ""
+            phase_description = (desc_elem.text or "").strip() if desc_elem is not None else ""
 
             tasks = []
             for task_elem in phase_elem.findall("task"):
@@ -116,11 +116,11 @@ class MarkdownParser:
 
                 task = Task(
                     id=task_id,
-                    name=name_elem.text.strip() if name_elem is not None else "",
+                    name=(name_elem.text or "").strip() if name_elem is not None else "",
                     files=files,
-                    action=action_elem.text.strip() if action_elem is not None else "",
-                    verify=verify_elem.text.strip() if verify_elem is not None else "",
-                    done=done_elem.text.strip() if done_elem is not None else "",
+                    action=(action_elem.text or "").strip() if action_elem is not None else "",
+                    verify=(verify_elem.text or "").strip() if verify_elem is not None else "",
+                    done=(done_elem.text or "").strip() if done_elem is not None else "",
                     phase_name=phase_name,
                 )
                 tasks.append(task)

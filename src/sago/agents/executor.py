@@ -7,6 +7,7 @@ from typing import Any
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import Task
 from sago.core.project import ProjectManager
+from sago.utils.paths import safe_resolve
 from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ class ExecutorAgent(BaseAgent):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.project_manager = ProjectManager(self.config)
+        self._file_cache: dict[str, str] = {}
+        self._tree_cache: str = ""
 
     async def execute(self, context: dict[str, Any]) -> AgentResult:
         try:
@@ -133,7 +136,12 @@ class ExecutorAgent(BaseAgent):
         if not file_path.exists():
             return
         try:
-            content = file_path.read_text(encoding="utf-8")
+            cache_key = str(file_path)
+            if cache_key in self._file_cache:
+                content = self._file_cache[cache_key]
+            else:
+                content = file_path.read_text(encoding="utf-8")
+                self._file_cache[cache_key] = content
             if truncate and len(content) > truncate:
                 content = content[:truncate] + "\n... (truncated)"
             context_parts.append(f"\n=== {prefix}{display_name} ===\n{content}")
@@ -146,7 +154,7 @@ class ExecutorAgent(BaseAgent):
                     "content_preview": content[:2000],
                 },
             )
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             self.logger.debug(f"Could not read {display_name}")
 
     def _walk_project_files(self, project_path: Path, max_lines: int) -> list[str]:
@@ -170,12 +178,15 @@ class ExecutorAgent(BaseAgent):
         return lines
 
     def _get_file_tree(self, project_path: Path, max_lines: int = 60) -> str:
+        if self._tree_cache:
+            return self._tree_cache
         try:
             lines = self._walk_project_files(project_path, max_lines)
         except Exception as e:
             self.logger.debug(f"Could not build file tree: {e}")
             return ""
-        return "\n".join(lines)
+        self._tree_cache = "\n".join(lines)
+        return self._tree_cache
 
     def _get_dependency_context(self, project_path: Path) -> str:
         parts: list[str] = []
@@ -183,7 +194,12 @@ class ExecutorAgent(BaseAgent):
             file_path = project_path / filename
             if file_path.exists():
                 try:
-                    content = file_path.read_text(encoding="utf-8")
+                    cache_key = str(file_path)
+                    if cache_key in self._file_cache:
+                        content = self._file_cache[cache_key]
+                    else:
+                        content = file_path.read_text(encoding="utf-8")
+                        self._file_cache[cache_key] = content
                     if len(content) > 3000:
                         content = content[:3000] + "\n... (truncated)"
                     parts.append(f"\n=== {filename} ===\n{content}")
@@ -196,7 +212,7 @@ class ExecutorAgent(BaseAgent):
                             "content_preview": content[:2000],
                         },
                     )
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     pass
         return "\n".join(parts)
 
@@ -272,7 +288,7 @@ Generate the code now:""",
 
     def _apply_changes(self, changes: dict[str, str], project_path: Path) -> None:
         for file_path_str, content in changes.items():
-            file_path = project_path / file_path_str
+            file_path = safe_resolve(project_path, file_path_str)
 
             file_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -17,6 +17,9 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: Console",
+    "Typing :: Typed",
 ]
 
 dependencies = [
@@ -27,7 +30,6 @@ dependencies = [
     "rich>=13.7.0",
     "python-dotenv>=1.0.0",
     "tenacity>=8.2.0",
-    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]
@@ -62,6 +64,9 @@ Issues = "https://github.com/duriantaco/sago/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+sago = ["templates/*.md", "web/dashboard.html", "py.typed"]
 
 [tool.black]
 line-length = 100
@@ -105,7 +110,7 @@ warn_no_return = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = ["litellm.*"]
+module = ["litellm.*", "llmlingua.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

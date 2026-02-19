@@ -1,10 +1,8 @@
-import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
-from functools import partial
+from enum import StrEnum
 from typing import Any
 
 from sago.core.config import Config
@@ -15,7 +13,7 @@ from sago.utils.tracer import tracer
 logger = logging.getLogger(__name__)
 
 
-class AgentStatus(str, Enum):
+class AgentStatus(StrEnum):
     SUCCESS = "success"
     FAILURE = "failure"
     PARTIAL = "partial"
@@ -152,7 +150,7 @@ Please provide output in the following format:
         ]
 
     async def _call_llm(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
-        """Call LLM with retry logic.
+        """Call LLM with retry logic (native async via litellm.acompletion).
 
         Args:
             messages: Message list for LLM
@@ -165,10 +163,7 @@ Please provide output in the following format:
         try:
             self.logger.info(f"Calling LLM with {len(messages)} messages")
             start = time.monotonic()
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
-                None, partial(self.llm.chat_completion, messages, **kwargs)
-            )
+            response = await self.llm.achat_completion(messages, **kwargs)
             duration_s = time.monotonic() - start
             usage = response.get("usage", {})
             self.logger.info(f"LLM response: {usage.get('total_tokens', 0)} tokens")

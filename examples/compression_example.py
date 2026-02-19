@@ -101,11 +101,11 @@ def example_3_llmlingua_compression() -> None:
         It provides structured templates for project management including PROJECT.md,
         REQUIREMENTS.md, ROADMAP.md, and STATE.md files. The system uses XML-based
         task decomposition to force atomic, verifiable tasks. It integrates with
-        multiple LLM providers through LiteLLM and includes a website blocker for
-        focus mode. The architecture is modular with separate modules for core
-        functionality, agents, blockers, and utilities. Testing is done with
-        pytest and the project requires Python 3.11 or higher. The CLI is built
-        with Typer and Rich for beautiful terminal output. Context compression
+        multiple LLM providers through LiteLLM and includes multi-agent orchestration
+        with planning, execution, and verification phases. The architecture is modular
+        with separate modules for core functionality, agents, and utilities. Testing
+        is done with pytest and the project requires Python 3.11 or higher. The CLI
+        is built with Typer and Rich for beautiful terminal output. Context compression
         helps manage token usage and reduce costs when working with LLMs.
         """
 

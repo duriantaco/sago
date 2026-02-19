@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -49,9 +50,10 @@ class SmartCache:
                 return None
 
             self.logger.info(f"Cache hit: {task_hash[:8]}")
-            return cache_data["result"]
+            result: dict[str, Any] = cache_data["result"]
+            return result
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             self.logger.warning(f"Error reading cache: {e}")
             return None
 
@@ -70,7 +72,7 @@ class SmartCache:
 
             self.logger.info(f"Cached result: {task_hash[:8]}")
 
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             self.logger.warning(f"Error writing cache: {e}")
 
     def invalidate_task(self, task_hash: str) -> None:
@@ -100,7 +102,7 @@ class SmartCache:
                 cached_time = datetime.fromisoformat(cache_data["timestamp"])
                 if datetime.now() - cached_time > self.ttl:
                     expired += 1
-            except Exception:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError):
                 pass
 
         return {
@@ -121,7 +123,7 @@ class SmartCache:
                 if datetime.now() - cached_time > self.ttl:
                     cache_file.unlink()
                     count += 1
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
                 self.logger.warning(f"Error cleaning cache file {cache_file}: {e}")
 
         self.logger.info(f"Cleaned up {count} expired cache entries")
@@ -146,7 +148,7 @@ class CacheManager:
     def get_or_execute(
         self,
         task_data: dict[str, Any],
-        execute_fn: Any,
+        execute_fn: Callable[[], dict[str, Any]],
         project_path: Path,
     ) -> dict[str, Any]:
         if not self.should_use_cache(task_data, project_path):
@@ -184,7 +186,7 @@ class CacheManager:
                     cache_file.unlink()
                     count += 1
 
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
                 self.logger.warning(f"Error checking cache file: {e}")
 
         self.logger.info(f"Invalidated {count} cache entries for {file_path}")

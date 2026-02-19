@@ -1,6 +1,6 @@
 import asyncio
-import fcntl
 import logging
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +18,7 @@ from sago.core.project import ProjectManager
 from sago.utils.cache import SmartCache
 from sago.utils.compression import ContextManager
 from sago.utils.git_integration import GitIntegration
+from sago.utils.paths import safe_resolve
 from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
@@ -102,10 +103,21 @@ class Orchestrator:
                 default_compressor="sliding_window",
             )
 
-        self.planner = PlannerAgent(config=self.config)
-        self.executor = ExecutorAgent(config=self.config, context_manager=context_manager)
-        self.verifier = VerifierAgent(config=self.config)
-        self.self_healer = SelfHealingAgent(config=self.config)
+        from sago.utils.llm import LLMClient
+
+        shared_llm = LLMClient(
+            model=self.config.llm_model,
+            api_key=self.config.llm_api_key,
+            temperature=self.config.llm_temperature,
+            max_tokens=self.config.llm_max_tokens,
+        )
+
+        self.planner = PlannerAgent(config=self.config, llm_client=shared_llm)
+        self.executor = ExecutorAgent(
+            config=self.config, llm_client=shared_llm, context_manager=context_manager
+        )
+        self.verifier = VerifierAgent(config=self.config, llm_client=shared_llm)
+        self.self_healer = SelfHealingAgent(config=self.config, llm_client=shared_llm)
         self.dependency_resolver = DependencyResolver()
 
         self.parser = MarkdownParser()
@@ -379,42 +391,62 @@ class Orchestrator:
     ) -> list[TaskExecution]:
         if self.config.enable_parallel_execution:
             self.logger.info(f"Executing {len(wave)} tasks in parallel")
-            coros = [
-                self._execute_single_task(task, project_path, verify, max_retries) for task in wave
-            ]
-            results = await asyncio.gather(*coros, return_exceptions=True)
-        else:
-            results = []
-            for task in wave:
+            return await self._execute_wave_parallel(wave, project_path, verify, max_retries)
+
+        results: list[TaskExecution] = []
+        for task in wave:
+            try:
+                result = await self._execute_single_task(task, project_path, verify, max_retries)
+                results.append(result)
+            except Exception as e:
+                results.append(self._failed_task_execution(task, e))
+        return results
+
+    async def _execute_wave_parallel(
+        self,
+        wave: list[Task],
+        project_path: Path,
+        verify: bool,
+        max_retries: int,
+    ) -> list[TaskExecution]:
+        semaphore = asyncio.Semaphore(self.config.max_concurrent_tasks)
+        results: dict[str, TaskExecution] = {}
+
+        async def _run(task: Task) -> None:
+            async with semaphore:
                 try:
-                    result = await self._execute_single_task(
+                    results[task.id] = await self._execute_single_task(
                         task, project_path, verify, max_retries
                     )
-                    results.append(result)
                 except Exception as e:
-                    results.append(e)
+                    results[task.id] = self._failed_task_execution(task, e)
 
-        task_executions = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                self.logger.error(f"Task {wave[i].id} raised exception: {result}")
-                task_executions.append(
-                    TaskExecution(
-                        task=wave[i],
-                        execution_result=AgentResult(
-                            status=AgentStatus.FAILURE,
-                            output="",
-                            error=str(result),
-                            metadata={},
-                        ),
-                        start_time=datetime.now(),
-                        end_time=datetime.now(),
-                    )
-                )
-            else:
-                task_executions.append(result)
+        try:
+            async with asyncio.TaskGroup() as tg:
+                for task in wave:
+                    tg.create_task(_run(task))
+        except ExceptionGroup as eg:
+            for exc in eg.exceptions:
+                self.logger.error(f"Parallel task error: {exc}")
 
-        return task_executions
+        return [
+            results.get(t.id, self._failed_task_execution(t, RuntimeError("not started")))
+            for t in wave
+        ]
+
+    def _failed_task_execution(self, task: Task, error: Exception) -> TaskExecution:
+        self.logger.error(f"Task {task.id} raised exception: {error}")
+        return TaskExecution(
+            task=task,
+            execution_result=AgentResult(
+                status=AgentStatus.FAILURE,
+                output="",
+                error=str(error),
+                metadata={},
+            ),
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+        )
 
     def _check_cache(
         self, task: Task, project_path: Path
@@ -433,13 +465,13 @@ class Orchestrator:
         pre_exec_file_contents: dict[str, str] = {}
 
         for file_path_str in task.files:
-            file_path = project_path / file_path_str
+            file_path = safe_resolve(project_path, file_path_str)
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding="utf-8")
                     task_data.setdefault("file_contents", {})[file_path_str] = content
                     pre_exec_file_contents[file_path_str] = content
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     pass
 
         task_hash = self.cache.get_task_hash(task_data)
@@ -450,7 +482,7 @@ class Orchestrator:
 
         self.logger.info(f"Cache hit for task {task.id}, skipping execution")
         for file_path_str, content in cached.get("files", {}).items():
-            file_path = project_path / file_path_str
+            file_path = safe_resolve(project_path, file_path_str)
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
 
@@ -479,25 +511,26 @@ class Orchestrator:
     ) -> None:
         cached_files = {}
         for file_path_str in task.files:
-            file_path = project_path / file_path_str
+            file_path = safe_resolve(project_path, file_path_str)
             if file_path.exists():
                 try:
                     current_content = file_path.read_text(encoding="utf-8")
                     pre_exec = pre_exec_file_contents.get(file_path_str)
                     if pre_exec is None or current_content != pre_exec:
                         cached_files[file_path_str] = current_content
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     pass
 
-        self.cache.set_cached_result(
-            task_hash,
-            {
-                "success": True,
-                "files": cached_files,
-                "metadata": metadata,
-            },
-        )
-        self.logger.info(f"Cached result for task {task.id}")
+        if self.cache is not None:
+            self.cache.set_cached_result(
+                task_hash,
+                {
+                    "success": True,
+                    "files": cached_files,
+                    "metadata": metadata,
+                },
+            )
+            self.logger.info(f"Cached result for task {task.id}")
 
     async def _execute_single_task(
         self, task: Task, project_path: Path, verify: bool = True, max_retries: int = 2
@@ -627,13 +660,13 @@ class Orchestrator:
 
         original_code_parts = []
         for file_path_str in task.files:
-            file_path = project_path / file_path_str
+            file_path = safe_resolve(project_path, file_path_str)
             if file_path.exists():
                 try:
                     original_code_parts.append(
                         f"=== {file_path_str} ===\n{file_path.read_text(encoding='utf-8')}"
                     )
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     pass
 
         verify_stdout = ""
@@ -657,7 +690,7 @@ class Orchestrator:
             self.logger.info(f"Self-healer generated fix for task {task.id}")
             fix_code = heal_result.metadata.get("fix_applied", {})
             for file_path_str, content in fix_code.items():
-                file_path = project_path / file_path_str
+                file_path = safe_resolve(project_path, file_path_str)
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 file_path.write_text(content, encoding="utf-8")
                 self.logger.info(f"Self-healer wrote fix to {file_path_str}")
@@ -687,8 +720,13 @@ class Orchestrator:
         if error:
             entry += f"\n  - Error: {error}"
 
-        with open(state_path, "a+" if state_path.exists() else "w+", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+        mode = "a+" if state_path.exists() else "w+"
+        with open(state_path, mode, encoding="utf-8") as f:
+            if sys.platform != "win32":
+                import fcntl
+
+                fcntl.flock(f, fcntl.LOCK_EX)
+
             try:
                 f.seek(0)
                 content = f.read()
@@ -706,4 +744,7 @@ class Orchestrator:
                 f.truncate()
                 f.write(content)
             finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
+                if sys.platform != "win32":
+                    import fcntl
+
+                    fcntl.flock(f, fcntl.LOCK_UN)

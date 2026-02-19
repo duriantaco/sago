@@ -9,6 +9,7 @@ This example shows how to use the agent system to:
 
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 
 from sago.agents import Orchestrator
@@ -32,7 +33,7 @@ async def example_1_plan_only():
     # Setup
     config = Config()
     orchestrator = Orchestrator(config=config)
-    project_path = Path("./example-project")
+    project_path = Path(tempfile.mkdtemp()) / "example-project"
 
     # Ensure project has requirements
     project_path.mkdir(exist_ok=True)
@@ -76,7 +77,7 @@ async def example_2_execute_plan():
     # Setup
     config = Config()
     orchestrator = Orchestrator(config=config)
-    project_path = Path("./example-project")
+    project_path = Path(tempfile.mkdtemp()) / "example-project"
 
     # Create a simple plan for demonstration
     (project_path / "PLAN.md").write_text(

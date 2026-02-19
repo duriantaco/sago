@@ -72,7 +72,8 @@ class Tracer:
                 self._file.close()
             safe_path = Path(trace_path).resolve()
             safe_path.parent.mkdir(parents=True, exist_ok=True)
-            self._file = open(safe_path, "a", encoding="utf-8")  # pragma: no skylos
+            f = open(safe_path, "a", encoding="utf-8")  # pragma: no skylos
+            self._file = f
             self._trace_id = uuid.uuid4().hex[:16]
             self._model = model
             self._enabled = True
@@ -182,7 +183,8 @@ class Tracer:
     def _get_span_stack(self) -> list[str]:
         if not hasattr(self._span_stack, "stack"):
             self._span_stack.stack = []
-        return self._span_stack.stack
+        result: list[str] = self._span_stack.stack
+        return result
 
     def _current_parent_span_id(self) -> str | None:
         stack = self._get_span_stack()

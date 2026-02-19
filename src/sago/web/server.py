@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 logger = logging.getLogger(__name__)
 
 _DASHBOARD_HTML = Path(__file__).parent / "dashboard.html"
+_MAX_EVENTS_PER_REQUEST = 5000
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -53,6 +54,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         total = i + 1
                         if i < after:
                             continue
+                        if len(events) >= _MAX_EVENTS_PER_REQUEST:
+                            break
                         line = line.strip()
                         if line:
                             try:
@@ -101,7 +104,7 @@ def _make_handler(trace_path: Path) -> type[DashboardHandler]:
     class BoundHandler(DashboardHandler):
         pass
 
-    BoundHandler.trace_path = trace_path  # type: ignore[attr-defined]
+    BoundHandler.trace_path = trace_path
     return BoundHandler
 
 

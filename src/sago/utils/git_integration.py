@@ -4,6 +4,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_GIT_TIMEOUT = 30  # seconds
+
 
 class GitIntegration:
     def __init__(self, project_path: Path) -> None:
@@ -30,12 +32,13 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
             self.logger.info("Initialized Git repository")
             return True
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to init Git repo: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to init Git repo: {getattr(e, 'stderr', str(e))}")
             return False
 
     def create_commit(
@@ -47,8 +50,8 @@ class GitIntegration:
 
         try:
             return self._do_create_commit(task_id, task_name, files, message)
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to create commit: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to create commit: {getattr(e, 'stderr', str(e))}")
             return False
 
     def _do_create_commit(
@@ -61,6 +64,7 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
 
         status_result = subprocess.run(
@@ -69,6 +73,7 @@ class GitIntegration:
             capture_output=True,
             text=True,
             check=True,
+            timeout=_GIT_TIMEOUT,
         )
 
         if not status_result.stdout.strip():
@@ -84,6 +89,7 @@ class GitIntegration:
             capture_output=True,
             text=True,
             check=True,
+            timeout=_GIT_TIMEOUT,
         )
 
         self.logger.info(f"Created commit for task {task_id}")
@@ -132,13 +138,14 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
 
             self.logger.info(f"Created branch: {branch_name}")
             return True
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to create branch: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to create branch: {getattr(e, 'stderr', str(e))}")
             return False
 
     def get_current_branch(self) -> str | None:
@@ -154,10 +161,11 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
             return result.stdout.strip()
 
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return None
 
     def push_branch(self, branch_name: str | None = None) -> bool:
@@ -183,13 +191,14 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
 
             self.logger.info(f"Pushed branch: {branch_name}")
             return True
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to push: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to push: {getattr(e, 'stderr', str(e))}")
             return False
 
     def create_checkpoint(self, name: str) -> str | None:
@@ -210,13 +219,14 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
 
             self.logger.info(f"Created checkpoint: {tag_name}")
             return tag_name
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to create checkpoint: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to create checkpoint: {getattr(e, 'stderr', str(e))}")
             return None
 
     def rollback_to_checkpoint(self, checkpoint: str) -> bool:
@@ -236,13 +246,14 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
 
             self.logger.info(f"Rolled back to: {checkpoint}")
             return True
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to rollback: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to rollback: {getattr(e, 'stderr', str(e))}")
             return False
 
     def get_file_diff(self, file_path: str) -> str | None:
@@ -261,10 +272,11 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
             return result.stdout
 
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return None
 
     def undo_last_commit(self, keep_changes: bool = True) -> bool:
@@ -284,11 +296,12 @@ class GitIntegration:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_TIMEOUT,
             )
 
             self.logger.info("Undid last commit")
             return True
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to undo commit: {e.stderr}")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.error(f"Failed to undo commit: {getattr(e, 'stderr', str(e))}")
             return False

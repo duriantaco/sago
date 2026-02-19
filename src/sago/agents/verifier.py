@@ -11,6 +11,10 @@ from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
 
+_BLOCKED_COMMANDS: frozenset[str] = frozenset(
+    {"rm", "rmdir", "dd", "shutdown", "reboot", "mkfs", "format"}
+)
+
 
 class VerifierAgent(BaseAgent):
     async def execute(self, context: dict[str, Any]) -> AgentResult:
@@ -81,10 +85,14 @@ class VerifierAgent(BaseAgent):
 
     def _parse_command(self, verify_str: str) -> list[str] | None:
         try:
-            return shlex.split(verify_str)
+            parts = shlex.split(verify_str)
         except ValueError as e:
             self.logger.error(f"Invalid verify command syntax: {e}")
             return None
+        if parts and Path(parts[0]).name in _BLOCKED_COMMANDS:
+            self.logger.error(f"Blocked dangerous command: {parts[0]}")
+            return None
+        return parts
 
     async def _run_subprocess(self, cmd: list[str], project_path: Path) -> dict[str, Any]:
         start = time.monotonic()

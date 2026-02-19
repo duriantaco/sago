@@ -156,9 +156,10 @@ class SlidingWindowCompressor(CompressorInterface):
         self,
         text: str,
         target_tokens: int | None = None,
-        delimiter: str = "\n\n",
+        instruction: str | None = None,
         **kwargs: Any,
     ) -> CompressionResult:
+        delimiter: str = kwargs.pop("delimiter", "\n\n")
         chunks = text.split(delimiter)
         windowed_chunks = chunks[-self.window_size :]
         compressed_text = delimiter.join(windowed_chunks)
@@ -190,6 +191,7 @@ class PassthroughCompressor(CompressorInterface):
         self,
         text: str,
         target_tokens: int | None = None,
+        instruction: str | None = None,
         **kwargs: Any,
     ) -> CompressionResult:
         tokens = self.estimate_tokens(text)

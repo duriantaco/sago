@@ -195,6 +195,6 @@ class DependencyResolver:
                 lines.append(f"    → depends on: {dep_str}")
             else:
                 lines.append(f"  {task_id} ({task.name})")
-                lines.append(f"    → no dependencies")
+                lines.append("    → no dependencies")
 
         return "\n".join(lines)
