@@ -1,9 +1,9 @@
 # Sago
 
 <div align="center">
-    <img src="assets/sago.png" alt="Sago - Turning your requirements into code" width="300">
-    <h1>Sago: Turning your requirements into code</h1>
-    <h3>A CLI that turns your requirements into working code. You describe what you want in markdown, sago generates a plan, writes the code, and verifies it works.</h3>
+    <img src="assets/sago.png" alt="Sago - AI project planning and orchestration" width="300">
+    <h1>Sago: The project planner for AI coding agents</h1>
+    <h3>You describe what you want in markdown. Sago generates a structured plan. Your coding agent (Claude Code, Cursor, Aider, etc.) builds it.</h3>
 </div>
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
@@ -12,56 +12,49 @@
 
 ---
 
+## What sago does
+
+Sago is a **planning and orchestration tool**, not a coding agent. It turns your project idea into a structured, verified plan — then gets out of the way and lets a real coding agent do the building.
+
+```
+You → sago init → sago plan → coding agent builds Phase 1 → sago replan → coding agent builds Phase 2 → ...
+```
+
+**Why?** AI coding agents (Claude Code, Cursor, etc.) are excellent at writing code but bad at planning entire projects from scratch. They lose track of requirements, skip steps, and produce inconsistent architectures. Sago solves the planning problem so the coding agent can focus on what it's good at — writing code.
+
+---
+
 ## Table of contents
 
-- [Installation](#installation)
-- [Step-by-step example](#step-by-step-example)
+- [Quick start](#quick-start)
 - [How it works](#how-it-works)
-- [Live dashboard](#live-dashboard)
-- [Why sago over other LLM orchestrators](#why-sago-over-other-llm-orchestrators)
+- [Using with Claude Code](#using-with-claude-code)
+- [Using with other agents](#using-with-other-agents)
+- [Mission control](#mission-control)
+- [Trace dashboard](#trace-dashboard)
 - [Commands](#commands)
 - [Configuration](#configuration)
 - [Task format](#task-format)
-- [Context compression](#context-compression)
-- [Code quality](#code-quality)
+- [Why sago](#why-sago)
 - [Development](#development)
-- [Troubleshooting](#troubleshooting)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
 
 ---
 
-## Installation
+## Quick start
+
+### 1. Install
 
 ```bash
 pip install -e .
 ```
 
-Requires Python 3.11+. Optional extras:
-
-```bash
-pip install -e ".[dev]"              # pytest, black, ruff, mypy
-pip install -e ".[compression]"      # context compression (LLMLingua)
-pip install -e ".[all]"              # everything
-```
-
----
-
-## Step-by-step example
-
-This walks through building a weather dashboard from scratch — from install to watching it happen live in the dashboard.
-
-### 1. Install sago
-
-```bash
-git clone https://github.com/yourusername/sago.git
-cd sago
-pip install -e .
-```
+Requires Python 3.11+.
 
 ### 2. Set up your LLM provider
 
-Create a `.env` file in the sago directory (or export the variables):
+Create a `.env` file (or export the variables):
 
 ```bash
 LLM_PROVIDER=openai
@@ -69,210 +62,267 @@ LLM_MODEL=gpt-4o
 LLM_API_KEY=sk-your-key-here
 ```
 
-Any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) works — OpenAI, Anthropic, Azure, Gemini, etc.
+Any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) works — OpenAI, Anthropic, Azure, Gemini, etc. The LLM is used for **plan generation only**.
 
 ### 3. Create a project
 
-**Option A** — generate from a prompt (LLM writes your spec):
-
 ```bash
-sago init weather-app --prompt "A weather dashboard with FastAPI and PostgreSQL"
-cd weather-app
+sago init
 ```
 
-**Option B** — write the spec yourself:
-
-```bash
-sago init weather-app
-cd weather-app
-```
-
-Edit `PROJECT.md` with your vision and tech stack, and `REQUIREMENTS.md` with specific features:
-
-```markdown
-# REQUIREMENTS.md
-* [ ] **REQ-1:** Display current weather for user's location
-* [ ] **REQ-2:** Show 5-day forecast with min/max temperatures
-* [ ] **REQ-3:** Allow searching by city name with autocomplete
-```
-
-Either way you end up with:
+Sago prompts for a project name and description. It generates the project scaffold:
 
 ```
-weather-app/
-├── PROJECT.md          ← What you're building and why
-├── REQUIREMENTS.md     ← What it should do (drives the plan)
-├── PLAN.md             ← Atomic tasks with verify commands (generated)
+my-project/
+├── PROJECT.md          ← Vision, tech stack, architecture
+├── REQUIREMENTS.md     ← What the project must do
+├── PLAN.md             ← Atomic tasks with verify commands (after sago plan)
 ├── STATE.md            ← Progress log (updated as tasks complete)
+├── CLAUDE.md           ← Instructions for the coding agent
+├── IMPORTANT.md        ← Rules the coding agent must follow
 └── .planning/          ← Runtime artifacts (cache, traces)
 ```
 
-### 4. Preview the cost
+If you provide a description during init, the AI generates `PROJECT.md` and `REQUIREMENTS.md` for you. Otherwise, fill them in yourself.
 
-Before spending any tokens on execution:
-
-```bash
-sago run --dry-run
-```
-
-This estimates token usage and dollar cost for every task without making any LLM calls. Review, then proceed.
-
-### 5. Run with the live dashboard
+### 4. Generate the plan
 
 ```bash
-sago run --trace
+sago plan
 ```
 
-This does everything — generates a plan, executes each task, verifies each one — and opens a live dashboard in your browser so you can watch it happen in real time.
+Sago reads your `PROJECT.md` and `REQUIREMENTS.md`, detects your environment (Python version, OS, platform), and generates a `PLAN.md` with:
 
-The dashboard shows:
-- **Feed tab** — each task as a card: file reads, LLM calls (click to see prompt/response), file writes (click to see content), verification pass/fail
-- **Log tab** — every event in chronological order with timestamps, agent names, and color-coded types. Click any row to expand full details
-- **Header** — live progress bar, total token count, elapsed time
+- Atomic tasks grouped into phases
+- Dependency ordering
+- Verification commands for each task
+- A list of third-party packages needed
 
-### 6. Check results
+### 5. Hand off to your coding agent
 
-After the run finishes:
+Point your coding agent at the project and tell it to follow the plan:
+
+**Claude Code:**
+```bash
+cd my-project
+claude
+# Claude Code reads CLAUDE.md automatically and follows the plan
+```
+
+**Cursor / Other agents:**
+Open the project directory. The agent should read `PLAN.md` and execute tasks in order, running each `<verify>` command to confirm the task is done.
+
+### 6. Watch your agent work
+
+In a separate terminal, launch mission control:
+
+```bash
+sago watch
+```
+
+This opens a live dashboard in your browser that shows task completion, file activity, and phase progress — updated every second as your coding agent works through the plan.
+
+### 7. Review between phases
+
+After your coding agent finishes a phase, run the phase gate:
+
+```bash
+sago replan
+```
+
+This reviews the completed work, shows findings (warnings, suggestions), saves the review to STATE.md, and optionally lets you adjust the plan before the next phase. Just press Enter to skip replanning if the review looks good.
+
+### 8. Track progress
 
 ```bash
 sago status              # quick summary
 sago status -d           # detailed per-task breakdown
 ```
 
-Your generated source files are in the project directory. `STATE.md` shows what passed and what failed.
-
-### 7. Resume or re-run
-
-If some tasks failed, fix the spec and re-run — sago only re-executes changed or failed tasks (smart caching is on by default):
-
-```bash
-sago run --trace                  # skips completed tasks automatically
-sago run --trace --auto-retry     # also auto-fix failed tasks via LLM
-sago run --trace --force-plan     # regenerate the plan from scratch
-```
-
-### 8. Review a past trace
-
-Open the dashboard for a completed run anytime:
-
-```bash
-sago trace                        # opens dashboard for the last run
-sago trace --path ./weather-app   # specify project path
-```
-
-### Try the demo
-
-Don't have an API key yet? See the dashboard with sample data:
-
-```bash
-sago trace --demo
-```
-
-This streams a realistic sample trace (a weather-app project with 3 tasks, including a failure + retry) so you can explore the Feed and Log tabs.
-
 ---
 
 ## How it works
 
-1. **Spec** — you write `PROJECT.md` and `REQUIREMENTS.md` (or `--prompt` generates them)
-2. **Plan** — sago calls an LLM to break your requirements into atomic tasks with verification commands
-3. **Execute** — each task gets its own LLM call that generates code and writes files
-4. **Verify** — each task's verification command runs automatically to confirm it works
+```
+┌─────────────────────────────────────────────────────┐
+│  1. SPEC                                            │
+│     You write PROJECT.md + REQUIREMENTS.md          │
+│     (or describe your idea and sago generates them) │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  2. PLAN (sago)                                     │
+│     Sago calls an LLM to generate PLAN.md:          │
+│     - Atomic tasks with verification commands       │
+│     - Dependency-ordered phases                     │
+│     - Environment-aware (Python version, OS)        │
+│     - Lists required third-party packages           │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  3. BUILD (your coding agent)                       │
+│     Claude Code / Cursor / Aider reads PLAN.md      │
+│     and executes tasks one by one:                  │
+│     - Follows <action> instructions                 │
+│     - Runs <verify> commands                        │
+│     - Updates STATE.md with progress                │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  4. REVIEW (sago replan)                            │
+│     Between phases, reviews completed work:         │
+│     - Runs ReviewerAgent on finished phases         │
+│     - Shows warnings, suggestions, issues           │
+│     - Saves review to STATE.md                      │
+│     - Optionally updates the plan with feedback     │
+└──────────────────────┬──────────────────────────────┘
+                       ▼
+              (repeat 3→4 for each phase)
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  5. TRACK (sago)                                    │
+│     sago status shows progress                      │
+│     Dashboard shows real-time updates               │
+└─────────────────────────────────────────────────────┘
+```
 
-The output is a `PLAN.md` with structured tasks, generated source files, and a `STATE.md` tracking what passed and what failed. Unlike tools that go straight from prompt to code, sago always produces a reviewable spec and plan — you see exactly what it intends to build before it writes a line of code.
+Sago is the project manager. Your coding agent is the developer. The markdown files are the contract between them.
 
 ---
 
-## Live dashboard
+## Using with Claude Code
 
-Add `--trace` to any run and sago opens a real-time dashboard in your browser:
+Sago generates a `CLAUDE.md` file during `sago init` that Claude Code reads automatically. It tells Claude Code how to follow the plan, execute tasks in order, and update STATE.md.
 
 ```bash
-sago run --trace             # plan + execute + verify with live dashboard
-sago execute --trace         # execute only, with dashboard
+sago init my-project --prompt "A weather dashboard with FastAPI and PostgreSQL"
+cd my-project
+sago plan
+claude
 ```
 
-The dashboard has two tabs:
+Claude Code picks up `CLAUDE.md` on startup and understands the task format. You can say something like:
 
-- **Feed** — task-centric view. Each task gets a card showing file reads, LLM calls (with expandable prompt/response), file writes (with expandable content), and verification results. Cards light up while active and show pass/fail when done.
-- **Log** — chronological event table. Every event (LLM calls, file reads, file writes, verifications, errors) in order with timestamps, agent names, and color-coded types. Click any row to expand and see full details.
+> "Follow the plan in PLAN.md. Start with task 1.1 and work through each task in order."
 
-The header shows live progress (tasks completed / total), cumulative token usage, and elapsed time.
+Or let it read `CLAUDE.md` and figure it out — the instructions are already there.
 
-To view a past run's trace:
+---
+
+## Using with Cursor
+
+```bash
+sago init my-project --prompt "A weather dashboard with FastAPI and PostgreSQL"
+cd my-project
+sago plan
+```
+
+Copy the sago workflow instructions into Cursor's rules file so the agent knows how to work:
+
+```bash
+cp CLAUDE.md .cursorrules
+```
+
+Then open the project in Cursor and use Agent mode. Tell it:
+
+> "Read PLAN.md and execute each task in order. After each task, run the verify command and update STATE.md."
+
+Cursor's agent will follow the plan the same way Claude Code does.
+
+---
+
+## Using with Aider
+
+```bash
+sago init my-project --prompt "A weather dashboard with FastAPI and PostgreSQL"
+cd my-project
+sago plan
+```
+
+Feed the plan and project context to Aider:
+
+```bash
+aider --read PLAN.md --read PROJECT.md --read REQUIREMENTS.md
+```
+
+Then tell it which task to work on:
+
+> "Execute task 1.1 from PLAN.md. Create the files listed, follow the action instructions, then run the verify command."
+
+Work through tasks one at a time since Aider works best with focused, single-task instructions.
+
+---
+
+## Using with any other agent
+
+Sago's output is just markdown files. Any coding agent that can read files and run commands works. The agent needs to:
+
+1. Read `PLAN.md` — the structured plan with phases and tasks
+2. Read `PROJECT.md` — the project vision, tech stack, and architecture
+3. Read `REQUIREMENTS.md` — what the project must do
+4. If `PLAN.md` has a `<dependencies>` block, install those packages first
+5. Execute tasks in order within each phase
+6. Run each task's `<verify>` command — it must exit 0 before moving on
+7. Update `STATE.md` after each task with pass/fail status
+
+The `CLAUDE.md` file generated by `sago init` contains these instructions in a format most agents understand. Rename or copy it to whatever your agent expects (`.cursorrules`, `.github/copilot-instructions.md`, etc.).
+
+---
+
+## Mission control
+
+While your coding agent builds the project, run mission control in a separate terminal:
+
+```bash
+sago watch                   # launch dashboard (auto-opens browser)
+sago watch --port 8080       # use a specific port
+sago watch --path ./my-app   # point to a different project
+```
+
+The dashboard shows:
+
+- **Overall progress** — progress bar with task count and percentage
+- **Phase tree** — every phase and task with live status icons (done, failed, pending)
+- **File activity** — new and modified files detected in the project directory
+- **Dependencies** — packages listed in PLAN.md
+- **Per-phase progress bars** — at a glance, which phases are done
+
+It polls STATE.md every second — as your coding agent marks tasks `[✓]` or `[✗]`, the dashboard updates automatically. No extra dependencies (stdlib HTTP server + `os.stat`).
+
+## Trace dashboard
+
+To view the planning trace after `sago plan`:
 
 ```bash
 sago trace                   # opens dashboard for the last trace
-sago trace --path ./my-project  # specify project path
 sago trace --demo            # sample data, no API key needed
 ```
-
-No extra dependencies — the dashboard uses Python's stdlib HTTP server and a self-contained HTML file.
-
----
-
-## Why sago over other LLM orchestrators
-
-Most LLM coding orchestrators share a common design: spawn multiple agents in parallel, let them figure it out. This works for demos but falls apart on real projects. Here is where sago is different, and where it is honest about being on par.
-
-### Where sago is objectively better
-
-**You control the cost before you spend it.**
-`sago run --dry-run` estimates token usage and dollar cost for every task before making a single LLM call. No other major orchestrator gives you a cost preview. You see exactly what a run will cost, broken down by phase, before you agree to it.
-
-**Re-runs don't re-execute everything.**
-Sago hashes each task's definition and the contents of its input files (SHA256). If nothing changed, the task is skipped entirely. Run `sago run` ten times on a half-finished project — it only executes the new and modified tasks. Caching is on by default (`--no-cache` to disable).
-
-**One LLM call per task, not N parallel agents.**
-Sequential execution is the default. Each task gets exactly one LLM call to generate code, then one verification command. No agent spawning, no parallel rate limit exhaustion, no token cost explosion from agents duplicating work. You can opt into parallel execution (`ENABLE_PARALLEL_EXECUTION=true`) when your tasks are truly independent, but the default protects your API budget.
-
-**Failures get classified and fixed, not just retried.**
-`--auto-retry` doesn't blindly re-run failed tasks. It classifies the error (import error, syntax error, type error, name error, indentation error, test failure, or unknown), builds a targeted fix prompt for that error type, and makes a focused LLM call to fix it. The difference between "run it again and hope" and "here's what went wrong, fix this specific thing."
-
-**It doesn't break when your editor updates.**
-Sago is a standalone `pip install` CLI that calls LLM APIs directly. It has no dependency on VS Code, Cursor, Claude Code, or any other host tool. Editor updates, plugin version mismatches, and host CLI breaking changes don't affect your workflows.
-
-### Where sago is on par
-
-**Multi-provider LLM support.**
-Sago uses LiteLLM, so it works with OpenAI, Anthropic, Azure, Gemini, and anything else LiteLLM supports. Switch providers by changing one environment variable. This is table stakes — most serious orchestrators support multiple providers now.
-
-**Language agnostic.**
-Sago generates code via LLM calls and writes files. It doesn't parse your AST or depend on a specific language's toolchain. Python, TypeScript, Go, Rust, whatever — if an LLM can write it, sago can orchestrate it. Other orchestrators that use LLMs for code generation are equally language-agnostic.
-
-### Unique features (no direct comparison)
-
-**Wave-based dependency resolution.** Tasks are analyzed for file dependencies and grouped into execution waves. Tasks in the same wave can run in parallel (if parallel mode is enabled); tasks with dependencies wait for their prerequisites. Circular dependencies are detected and rejected before execution starts.
 
 ---
 
 ## Commands
 
 ```bash
-sago init [name]                     # create project scaffold with example templates
+sago init                            # interactive: prompts for name + description
+sago init [name]                     # quick scaffold with templates
 sago init [name] --prompt "desc"     # generate spec files from a prompt via LLM
+sago init -y                         # non-interactive, all defaults
 sago plan                            # generate PLAN.md from requirements
-sago execute                         # execute tasks from PLAN.md
-sago run                             # plan + execute + verify in one step
+sago replan                          # phase gate: review completed work, optionally update plan
+sago watch                           # launch mission control dashboard
+sago watch --port 8080               # use a specific port
 sago status                          # show project progress
 sago status -d                       # detailed per-task breakdown
-sago trace                           # open dashboard for the last run's trace
+sago trace                           # open dashboard for the last trace
 sago trace --demo                    # open dashboard with sample data
 ```
 
-### Flags for `sago run`
+### Flags for `sago plan`
 
 | Flag | What it does |
 |---|---|
-| `--dry-run` | Estimate cost without executing |
-| `--trace` | Open live dashboard in browser |
-| `--auto-retry` | Classify errors and attempt LLM-powered fixes |
-| `--git-commit` | Auto-commit after each successful task |
-| `--compress` | Compress LLM context for large codebases |
-| `--no-cache` | Force re-execution of all tasks |
-| `--no-verify` | Skip verification commands |
-| `--continue-on-failure` | Don't stop on first failed task |
-| `--force-plan` | Regenerate plan even if PLAN.md exists |
+| `--force` / `-f` | Regenerate PLAN.md if it already exists |
+| `--trace` | Open live dashboard during planning |
 
 ---
 
@@ -286,9 +336,6 @@ LLM_MODEL=gpt-4o
 LLM_API_KEY=your-key-here
 LLM_TEMPERATURE=0.1
 LLM_MAX_TOKENS=4096
-
-ENABLE_PARALLEL_EXECUTION=false
-ENABLE_GIT_COMMITS=true
 LOG_LEVEL=INFO
 ```
 
@@ -302,6 +349,15 @@ Tasks in `PLAN.md` use XML inside markdown:
 
 ```xml
 <phases>
+  <dependencies>
+    <package>flask>=2.0</package>
+    <package>sqlalchemy>=2.0</package>
+  </dependencies>
+
+  <review>
+    Review instructions for post-phase code review...
+  </review>
+
   <phase name="Phase 1: Setup">
     <task id="1.1">
       <name>Create config module</name>
@@ -314,40 +370,25 @@ Tasks in `PLAN.md` use XML inside markdown:
 </phases>
 ```
 
-Each task has a verification command that runs after code generation. If it exits 0, the task passed. If not, it failed (and `--auto-retry` can attempt a fix).
+- **`<dependencies>`** — third-party packages needed, with version constraints
+- **`<review>`** — instructions for reviewing each phase's output
+- **`<task>`** — atomic unit of work with files, action, verification, and done criteria
+
+The coding agent reads this format and executes tasks sequentially. Each task's `<verify>` command must exit 0 before moving on.
 
 ---
 
-## Context compression
+## Why sago
 
-Enable `--compress` to reduce LLM token usage on large codebases. Sago supports two strategies:
+**The planning problem.** AI coding agents are great at writing code for a well-defined task. But ask them to build an entire project from a vague description and they lose track of requirements, skip steps, pick incompatible dependencies, and produce inconsistent architectures. The gap isn't in code generation — it's in project planning.
 
-- **Sliding window** — fast, trims older context. Good for chat-style interactions.
-- **LLMLingua** — ML-based compression, 50-95% token reduction. Requires `pip install -e ".[compression]"`.
+**Sago fills that gap.** It uses an LLM to generate a structured, verified plan with atomic tasks, dependency ordering, and environment-aware dependency suggestions. Then it hands off to whatever coding agent you prefer.
 
-```bash
-sago run --compress          # uses sliding window by default
-```
+**Model-agnostic planning.** Sago uses [LiteLLM](https://docs.litellm.ai/docs/providers) for plan generation, so you're not locked into any provider. Use OpenAI, Anthropic, Azure, Gemini, Mistral — whatever gives you the best plans.
 
-Or use the Python API directly:
+**Agent-agnostic execution.** Sago doesn't care what builds the code. Claude Code, Cursor, Aider, Copilot, a human — anything that can read markdown and follow instructions. Sago generates the plan; you choose the builder.
 
-```python
-from sago.utils.compression import ContextManager
-
-manager = ContextManager(max_context_tokens=4000, compression_threshold=0.75)
-result = manager.auto_compress(full_context)
-print(f"Compressed from {result.original_tokens} to {result.compressed_tokens} tokens")
-```
-
----
-
-## Code quality
-
-This codebase is kept clean with [Skylos](https://github.com/gregorylira/skylos), a dead code detection tool that runs as a PR guard. Skylos scans every pull request and flags unused functions, classes, imports, and variables before they get merged. The `Dead Code Free` badge at the top of this README means Skylos has verified there is no dead code in the current codebase.
-
-```bash
-skylos src/                  # run locally to check for dead code
-```
+**Spec-first, always.** Every sago project has a reviewable spec (PROJECT.md, REQUIREMENTS.md) and a reviewable plan (PLAN.md) before any code is written. You see exactly what will be built and can adjust before spending time or tokens on execution.
 
 ---
 
@@ -365,16 +406,6 @@ black src/ tests/             # format
 mypy src/                     # type check (strict mode)
 skylos src/                   # dead code detection
 ```
-
----
-
-## Troubleshooting
-
-**`ImportError: llmlingua not installed`** — Install compression extras: `pip install -e ".[compression]"`
-
-**Context not compressing** — Text may be below the compression threshold. Lower it: set `COMPRESSION_THRESHOLD=0.5` in `.env` or pass it to `ContextManager`.
-
-**`Trace file not found`** — You need to run with `--trace` first to generate a trace file, or use `sago trace --demo` for sample data.
 
 ---
 
