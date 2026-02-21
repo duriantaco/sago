@@ -16,10 +16,8 @@ _MAX_EVENTS_PER_REQUEST = 5000
 
 
 class WatchHandler(BaseHTTPRequestHandler):
-    """Unified handler serving the combined mission control + trace UI."""
-
     project_path: Path
-    watcher: Any  # ProjectWatcher
+    watcher: Any
     plan_data: dict[str, Any]
     trace_path: Path
 
@@ -115,7 +113,6 @@ class WatchHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
 
     def log_message(self, format: str, *args: Any) -> None:
-        """Suppress default stderr logging."""
         pass
 
 
@@ -154,21 +151,6 @@ def start_watch_server(
     port: int = 0,
     open_browser: bool = True,
 ) -> HTTPServer:
-    """Start the unified watch server in a daemon thread.
-
-    Serves the combined mission control + trace UI on a single port.
-
-    Args:
-        project_path: Path to the project directory.
-        watcher: ProjectWatcher instance.
-        plan_data: Pre-parsed plan structure (phases, dependencies).
-        trace_path: Path to the JSONL trace file.
-        port: Port to bind (0 = OS-assigned).
-        open_browser: Whether to auto-open in browser.
-
-    Returns:
-        The running HTTPServer instance (call .shutdown() to stop).
-    """
     handler_cls = _make_handler(project_path, watcher, plan_data, trace_path)
     server = HTTPServer(("127.0.0.1", port), handler_cls)
     actual_port = server.server_address[1]

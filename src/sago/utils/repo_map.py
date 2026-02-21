@@ -34,7 +34,6 @@ def _format_arg(arg: ast.arg) -> str:
 
 
 def _format_function(node: ast.FunctionDef | ast.AsyncFunctionDef, indent: str = "") -> str:
-    """Format a function/method signature."""
     args = []
     for arg in node.args.args:
         args.append(_format_arg(arg))
@@ -49,7 +48,6 @@ def _format_function(node: ast.FunctionDef | ast.AsyncFunctionDef, indent: str =
 
 
 def _format_class(node: ast.ClassDef) -> list[str]:
-    """Format a class with its bases and method signatures."""
     bases = []
     for base in node.bases:
         try:
@@ -65,7 +63,6 @@ def _format_class(node: ast.ClassDef) -> list[str]:
 
 
 def _extract_signatures(source: str, filename: str) -> list[str]:
-    """Extract top-level class and function signatures from Python source."""
     try:
         tree = ast.parse(source, filename=filename)
     except SyntaxError:

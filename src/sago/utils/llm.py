@@ -105,7 +105,6 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | None = None,
     ) -> dict[str, Any]:
-        """Async LLM call using litellm.acompletion (no executor needed)."""
         if not self.validate_messages(messages):
             raise LLMError("Invalid messages: each must have 'role' and 'content' keys")
         try:
@@ -340,8 +339,6 @@ class LLMClient:
                 return False
             if msg["role"] not in _VALID_ROLES:
                 return False
-            # tool/function messages use tool_call_id instead of content;
-            # assistant messages with tool_calls may have content=None
             if msg["role"] in ("system", "user") and "content" not in msg:
                 return False
 

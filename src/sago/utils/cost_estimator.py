@@ -105,7 +105,6 @@ class CostEstimator:
             min_time += plan_time[0]
             max_time += plan_time[1]
 
-        # Task execution cost
         for _task in tasks:
             task_tokens = self.TOKEN_ESTIMATES["task_execution"]
             total_input_tokens += task_tokens["input"]

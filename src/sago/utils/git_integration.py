@@ -13,11 +13,6 @@ class GitIntegration:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def is_git_repo(self) -> bool:
-        """Check if project is a Git repository.
-
-        Returns:
-            True if .git directory exists
-        """
         return (self.project_path / ".git").exists()
 
     def init_repo(self) -> bool:
@@ -96,16 +91,6 @@ class GitIntegration:
         return True
 
     def _generate_commit_message(self, task_id: str, task_name: str, files: list[str]) -> str:
-        """Generate commit message for task.
-
-        Args:
-            task_id: Task identifier
-            task_name: Task name
-            files: Files modified
-
-        Returns:
-            Formatted commit message
-        """
         lines = [
             f"✅ {task_id}: {task_name}",
             "",
@@ -120,14 +105,6 @@ class GitIntegration:
         return "\n".join(lines)
 
     def create_branch(self, branch_name: str) -> bool:
-        """Create a new branch.
-
-        Args:
-            branch_name: Branch name
-
-        Returns:
-            True if successful
-        """
         if not self.is_git_repo():
             return False
 
@@ -149,11 +126,6 @@ class GitIntegration:
             return False
 
     def get_current_branch(self) -> str | None:
-        """Get current branch name.
-
-        Returns:
-            Branch name or None if error
-        """
         try:
             result = subprocess.run(
                 ["git", "branch", "--show-current"],
@@ -169,14 +141,6 @@ class GitIntegration:
             return None
 
     def push_branch(self, branch_name: str | None = None) -> bool:
-        """Push branch to remote.
-
-        Args:
-            branch_name: Branch to push (current if None)
-
-        Returns:
-            True if successful
-        """
         if not branch_name:
             branch_name = self.get_current_branch()
 
@@ -202,16 +166,7 @@ class GitIntegration:
             return False
 
     def create_checkpoint(self, name: str) -> str | None:
-        """Create a checkpoint (tag) for rollback.
-
-        Args:
-            name: Checkpoint name
-
-        Returns:
-            Checkpoint identifier or None if failed
-        """
         try:
-            # Create tag
             tag_name = f"sago-checkpoint-{name}"
             subprocess.run(
                 ["git", "tag", tag_name],
@@ -230,16 +185,7 @@ class GitIntegration:
             return None
 
     def rollback_to_checkpoint(self, checkpoint: str) -> bool:
-        """Rollback to a checkpoint.
-
-        Args:
-            checkpoint: Checkpoint identifier
-
-        Returns:
-            True if successful
-        """
         try:
-            # Reset to checkpoint
             subprocess.run(
                 ["git", "reset", "--hard", checkpoint],
                 cwd=self.project_path,
@@ -257,14 +203,6 @@ class GitIntegration:
             return False
 
     def get_file_diff(self, file_path: str) -> str | None:
-        """Get diff for a file.
-
-        Args:
-            file_path: File path
-
-        Returns:
-            Diff string or None if error
-        """
         try:
             result = subprocess.run(
                 ["git", "diff", file_path],
@@ -280,14 +218,6 @@ class GitIntegration:
             return None
 
     def undo_last_commit(self, keep_changes: bool = True) -> bool:
-        """Undo last commit.
-
-        Args:
-            keep_changes: If True, keeps changes in working directory
-
-        Returns:
-            True if successful
-        """
         try:
             mode = "--soft" if keep_changes else "--hard"
             subprocess.run(

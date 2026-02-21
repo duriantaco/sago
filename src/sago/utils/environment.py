@@ -1,19 +1,8 @@
-"""Detect runtime environment (Python version, OS, platform) for LLM context."""
-
 import platform
 import sys
 
 
 def detect_environment() -> dict[str, str]:
-    """Return runtime environment details.
-
-    Returns a dict with keys:
-        python_version: e.g. "3.13"
-        python_full_version: e.g. "3.13.1"
-        os: e.g. "Darwin", "Linux", "Windows"
-        platform: e.g. "arm64", "x86_64"
-        architecture: e.g. "64bit"
-    """
     ver = sys.version_info
     return {
         "python_version": f"{ver.major}.{ver.minor}",
@@ -25,7 +14,6 @@ def detect_environment() -> dict[str, str]:
 
 
 def format_environment_context(env: dict[str, str]) -> str:
-    """Format environment dict into a text block for LLM prompts."""
     return (
         f"Python: {env['python_full_version']}\n"
         f"OS: {env['os']}\n"
