@@ -36,6 +36,7 @@ You → sago init → sago plan → coding agent builds Phase 1 → sago replan 
 - [Configuration](#configuration)
 - [Task format](#task-format)
 - [Why sago](#why-sago)
+- [Sago vs GSD](#sago-vs-gsd)
 - [Development](#development)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
@@ -389,6 +390,27 @@ The coding agent reads this format and executes tasks sequentially. Each task's 
 **Agent-agnostic execution.** Sago doesn't care what builds the code. Claude Code, Cursor, Aider, Copilot, a human — anything that can read markdown and follow instructions. Sago generates the plan; you choose the builder.
 
 **Spec-first, always.** Every sago project has a reviewable spec (PROJECT.md, REQUIREMENTS.md) and a reviewable plan (PLAN.md) before any code is written. You see exactly what will be built and can adjust before spending time or tokens on execution.
+
+---
+
+## Sago vs GSD
+
+[GSD (Get Shit Done)](https://github.com/glittercowboy/get-shit-done) is a great project that inspired sago. Both solve the same core problem — AI coding agents are bad at planning — but they take different approaches.
+
+| | Sago | GSD |
+|---|---|---|
+| **What it is** | Standalone CLI tool (`pip install`) | Prompt system loaded into Claude Code |
+| **Coding agent** | Any — Claude Code, Cursor, Aider, Copilot, a human | Claude Code only (uses its sub-agent spawning) |
+| **Planning LLM** | Any LiteLLM provider (OpenAI, Anthropic, Gemini, etc.) | Claude (via Claude Code) |
+| **Execution** | You hand off to your coding agent | GSD spawns executor agents in fresh contexts |
+| **Context management** | Not sago's concern — your agent manages its own context | Core feature — fights "context rot" by spawning fresh 200k-token windows per task |
+| **Phase transitions** | Explicit phase gate (`sago replan`) with code review and optional replan | Automatic wave-based execution with `/gsd:execute-phase` |
+| **Research** | You write PROJECT.md + REQUIREMENTS.md (or generate from a prompt) | Spawns parallel researcher agents to investigate the domain |
+| **Review** | `ReviewerAgent` runs between phases via `sago replan`, saves findings to STATE.md | `/gsd:verify-work` with interactive debug agents |
+
+**When to use GSD:** You use Claude Code exclusively and want a fully automated pipeline — research, plan, execute, verify — all within Claude Code's sub-agent system. GSD's context rotation (fresh windows per task) is its killer feature for large projects.
+
+**When to use sago:** You want to use different coding agents (or switch between them), want to use a non-Claude LLM for planning, or prefer an explicit human-in-the-loop workflow where you review the plan and gate phase transitions yourself. Sago is the project manager; you pick the developer.
 
 ---
 
