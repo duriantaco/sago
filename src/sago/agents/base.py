@@ -149,7 +149,7 @@ Please provide output in the following format:
             },
         ]
 
-    async def _call_llm(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
+    async def _call_llm(self, messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
         """Call LLM with retry logic (native async via litellm.acompletion).
 
         Args:
@@ -170,9 +170,9 @@ Please provide output in the following format:
             prompt_preview = ""
             for m in reversed(messages):
                 if m.get("role") == "user":
-                    prompt_preview = m.get("content", "")[:3000]
+                    prompt_preview = (m.get("content") or "")[:3000]
                     break
-            response_preview = response.get("content", "")[:5000]
+            response_preview = (response.get("content") or "")[:5000]
             tracer.emit(
                 "llm_call",
                 agent_name,

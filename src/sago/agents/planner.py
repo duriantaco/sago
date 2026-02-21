@@ -16,6 +16,18 @@ class PlannerAgent(BaseAgent):
         self.parser = MarkdownParser()
         self.project_manager = ProjectManager(self.config)
 
+    def _build_system_prompt(self, role: str) -> str:
+        return f"""You are a {role}.
+
+Rules:
+- Break work into atomic, independently executable tasks
+- Each task must produce concrete file changes — no vague or aspirational steps
+- Order tasks so that dependencies are satisfied (earlier tasks create what later tasks need)
+- Verification commands must be real, runnable shell commands (pytest, python -c, etc.)
+- Action descriptions must be detailed enough for a code-generation agent to implement without guessing
+- Only plan what the requirements ask for — no extra features or speculative tasks
+"""
+
     async def execute(self, context: dict[str, Any]) -> AgentResult:
         try:
             return await self._do_execute(context)
@@ -33,6 +45,7 @@ class PlannerAgent(BaseAgent):
 
         project_context = self._load_project_context(project_path)
         plan_xml = await self._generate_plan_xml(project_context)
+        plan_xml = self._sanitize_xml(plan_xml)
         self._validate_plan(plan_xml)
 
         plan_path = project_path / "PLAN.md"
@@ -97,12 +110,29 @@ class PlannerAgent(BaseAgent):
             else:
                 self.logger.debug(f"Optional file not present: {filename}")
 
+        from sago.utils.repo_map import generate_repo_map
+
+        repo_map = generate_repo_map(project_path)
+        if repo_map:
+            context["REPO_MAP"] = repo_map
+            self.logger.debug(f"Generated repo map: {len(repo_map)} chars")
+
+        from sago.utils.environment import detect_environment, format_environment_context
+
+        env = detect_environment()
+        context["ENVIRONMENT"] = format_environment_context(env)
+
         return context
 
     async def _generate_plan_xml(self, project_context: dict[str, str]) -> str:
         context_str = "\n\n".join(
             [f"=== {name} ===\n{content}" for name, content in project_context.items() if content]
         )
+
+        from sago.utils.environment import PYPROJECT_TEMPLATE, detect_environment
+
+        env = detect_environment()
+        pyproject_example = PYPROJECT_TEMPLATE.replace("{python_version}", env["python_version"])
 
         messages = [
             {
@@ -120,16 +150,52 @@ Project Context:
 
 CRITICAL REQUIREMENTS:
 1. Use XML format with <phases>, <phase>, and <task> tags
-2. Each task must be ATOMIC (completable in one session)
-3. Each task must have: id, name, files, action, verify, done
-4. Tasks must be ordered by dependencies
-5. Each phase should group related tasks
-6. Verify commands must be executable (pytest, python -c, etc.)
+2. Include a <review> tag inside <phases> (before the first <phase>) with instructions for reviewing each phase's output
+3. Each task must be ATOMIC (completable in one session)
+4. Each task must have: id, name, files, action, verify, done
+5. Tasks must be ordered by dependencies
+6. Each phase should group related tasks
 7. Action must be detailed enough for execution
+8. Do NOT use special XML characters (&, <, >) in text content — spell out "and" instead of &
+9. Include a <dependencies> block inside <phases> (before <review>) listing all third-party \
+packages. Use <package> tags with version constraints:
+     <dependencies>
+       <package>flask>=2.0</package>
+       <package>requests>=2.28</package>
+     </dependencies>
+   Only suggest packages available on PyPI that support the Python version shown in ENVIRONMENT. \
+Do NOT include stdlib modules or dev-only tools.
+10. When any task creates pyproject.toml, use PEP 621 format with setuptools:
+{pyproject_example}
+    NEVER use poetry ([tool.poetry]), flit, or hatch formats.
+
+VERIFY COMMAND RULES (critical — broken verify = failed task):
+- ONLY use: python -c "...", pytest, or simple file checks (test -f, ls)
+- Verify must check that the FILES THIS TASK CREATES actually exist and are valid Python
+- NEVER import third-party packages (tensorflow, torch, numpy, flask, etc.) in verify — they may not be installed
+- NEVER start long-running processes (servers, daemons) in verify
+- NEVER assume external tools (aws, docker, kubectl, etc.) are installed
+- For Python files: use "python -c" to import the module and print a success message
+- For config/data files: use "test -f path/to/file" or "python -c" to parse them
+- Keep verify commands simple and fast (under 10 seconds)
 
 Example Structure:
 ```xml
 <phases>
+    <dependencies>
+        <package>flask>=2.0</package>
+        <package>sqlalchemy>=2.0</package>
+    </dependencies>
+
+    <review>
+        Review the completed phase. For every issue:
+        - Describe the problem with file and line references
+        - Assess severity (critical, warning, suggestion)
+        - Provide concrete fix instructions
+        Focus on: code quality, edge cases, DRY violations,
+        security issues, and alignment with requirements.
+    </review>
+
     <phase name="Phase 1: Foundation">
         <description>Set up project structure</description>
 
@@ -141,7 +207,7 @@ Example Structure:
             </files>
             <action>
                 Create project structure with:
-                - pyproject.toml with dependencies
+                - pyproject.toml with dependencies (PEP 621 format, setuptools backend)
                 - src/__init__.py with version info
                 - Modern Python 3.11+ setup
             </action>
@@ -168,6 +234,14 @@ Generate a complete, executable plan now:""",
             raise ValueError("Generated plan does not contain valid XML structure")
 
         return content[xml_start:xml_end]
+
+    def _sanitize_xml(self, xml_str: str) -> str:
+        """Fix common XML issues from LLM output (bare &, unescaped chars in text)."""
+        import re as _re
+
+        # Replace bare & that aren't already entities (e.g. "TCP & HTTP" but not "&amp;")
+        xml_str = _re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", xml_str)
+        return xml_str
 
     def _validate_plan(self, plan_xml: str) -> None:
         if "<phases>" not in plan_xml or "</phases>" not in plan_xml:
@@ -198,6 +272,10 @@ Generate a complete, executable plan now:""",
 ```
 
 ## Task Structure Schema
+
+The `<phases>` block contains:
+- **`<dependencies>`** (optional): Lists third-party packages needed by the project. Each package is a `<package>` element with optional version constraints (e.g. `flask>=2.0`).
+- **`<review>`** (optional): Instructions for post-phase code review. If present, a review runs automatically after each phase completes and feedback carries forward to the next phase.
 
 Each `<task>` must contain:
 - **id:** Unique identifier (phase.task format)

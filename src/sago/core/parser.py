@@ -88,6 +88,9 @@ class MarkdownParser:
                 raise ValueError("No XML task block found in content")
             xml_content = raw_match.group(1)
 
+        # Sanitize bare & in text content (common LLM output issue)
+        xml_content = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", xml_content)
+
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError as e:
@@ -248,6 +251,106 @@ class MarkdownParser:
                 state[current_section].append(line[1:].strip())
 
         return state
+
+    def parse_review_prompt(self, content: str) -> str:
+        """Extract the <review> tag content from <phases> XML.
+
+        Returns the review prompt text, or empty string if no <review> tag exists.
+        """
+        xml_pattern = r"```xml\s*(.*?)\s*```"
+        xml_match = re.search(xml_pattern, content, re.DOTALL)
+
+        if xml_match:
+            xml_content = xml_match.group(1)
+        else:
+            raw_pattern = r"(<phases\b.*?</phases>)"
+            raw_match = re.search(raw_pattern, content, re.DOTALL)
+            if not raw_match:
+                return ""
+            xml_content = raw_match.group(1)
+
+        xml_content = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", xml_content)
+
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError:
+            return ""
+
+        review_elem = root.find("review")
+        if review_elem is not None and review_elem.text:
+            return review_elem.text.strip()
+        return ""
+
+    def parse_dependencies(self, content: str) -> list[str]:
+        """Extract <package> elements from <dependencies> in PLAN.md XML.
+
+        Returns e.g. ["flask>=2.0", "requests", "pydantic>=2.0"].
+        Returns [] if no <dependencies> element found.
+        """
+        xml_pattern = r"```xml\s*(.*?)\s*```"
+        xml_match = re.search(xml_pattern, content, re.DOTALL)
+
+        if xml_match:
+            xml_content = xml_match.group(1)
+        else:
+            raw_pattern = r"(<phases\b.*?</phases>)"
+            raw_match = re.search(raw_pattern, content, re.DOTALL)
+            if not raw_match:
+                return []
+            xml_content = raw_match.group(1)
+
+        xml_content = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", xml_content)
+
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError:
+            return []
+
+        deps_elem = root.find("dependencies")
+        if deps_elem is None:
+            return []
+
+        return [
+            pkg.text.strip()
+            for pkg in deps_elem.findall("package")
+            if pkg.text and pkg.text.strip()
+        ]
+
+    def parse_state_tasks(self, content: str, plan_phases: list[Phase]) -> list[dict[str, str]]:
+        """Parse STATE.md and match against plan tasks.
+
+        Returns list of {id, name, status: 'done'|'failed'|'pending', phase_name}
+        for every task in the plan. Tasks not mentioned in STATE.md are 'pending'.
+        """
+        done_ids: set[str] = set()
+        failed_ids: set[str] = set()
+
+        for line in content.split("\n"):
+            line = line.strip()
+            m = re.match(r"\[✓\]\s+(\d+\.\d+):", line)
+            if m:
+                done_ids.add(m.group(1))
+                continue
+            m = re.match(r"\[✗\]\s+(\d+\.\d+):", line)
+            if m:
+                failed_ids.add(m.group(1))
+
+        results: list[dict[str, str]] = []
+        for phase in plan_phases:
+            for task in phase.tasks:
+                if task.id in done_ids:
+                    status = "done"
+                elif task.id in failed_ids:
+                    status = "failed"
+                else:
+                    status = "pending"
+                results.append({
+                    "id": task.id,
+                    "name": task.name,
+                    "status": status,
+                    "phase_name": phase.name,
+                })
+        return results
 
     def parse_plan_file(self, file_path: Path) -> list[Phase]:
         content = file_path.read_text(encoding="utf-8")

@@ -11,9 +11,9 @@ class ProjectManager:
     TEMPLATE_FILES = [
         "PROJECT.md",
         "REQUIREMENTS.md",
-        "PLAN.md",
         "STATE.md",
         "IMPORTANT.md",
+        "CLAUDE.md",
     ]
 
     def __init__(self, config: Config | None = None) -> None:

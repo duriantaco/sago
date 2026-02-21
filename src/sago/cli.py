@@ -9,14 +9,13 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from sago.agents.orchestrator import Orchestrator
-from sago.core.config import Config
+from sago.core.config import Config, find_dotenv
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
-from sago.utils.cost_estimator import CostEstimator
 
 app = typer.Typer(
     name="sago",
-    help="sago - AI-powered project orchestration CLI",
+    help="sago - AI project planning for coding agents",
     add_completion=False,
 )
 
@@ -24,57 +23,172 @@ console = Console()
 config = Config()
 
 
+def _load_config(project_path: Path | None = None) -> Config:
+    """Reload Config, searching for .env from *project_path* upwards."""
+    global config
+    if project_path is not None:
+        env_file = find_dotenv(project_path) or ".env"
+        config = Config(_env_file=env_file)
+    return config
+
+# Provider-specific env vars that litellm checks automatically
+_PROVIDER_KEY_ENV_VARS: dict[str, str] = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "azure": "AZURE_API_KEY",
+    "cohere": "COHERE_API_KEY",
+    "huggingface": "HUGGINGFACE_API_KEY",
+    "together_ai": "TOGETHERAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+}
+
+
+def _check_llm_configured() -> None:
+    """Fail early if no LLM API key is available."""
+    if config.llm_api_key:
+        return
+    provider_env = _PROVIDER_KEY_ENV_VARS.get(config.llm_provider, "")
+    console.print(
+        Panel(
+            f"[bold red]No API key configured for LLM provider '{config.llm_provider}'[/bold red]\n\n"
+            "Set one of the following in your .env file:\n"
+            f"  [cyan]LLM_API_KEY=sk-...[/cyan]\n"
+            + (f"  [cyan]{provider_env}=sk-...[/cyan]\n" if provider_env else "")
+            + "\nOr export it in your environment:\n"
+            "  export LLM_API_KEY=sk-..."
+            + (f"\n  export {provider_env}=sk-..." if provider_env else ""),
+            title="Missing API Key",
+            border_style="red",
+        )
+    )
+    raise typer.Exit(1)
+
+
+# Distinctive strings from the placeholder templates
+_PLACEHOLDER_MARKERS = [
+    "A brief description of what you're building and why",
+    "TaskFlow is a CLI task runner",
+    "Each requirement becomes one or more tasks in the plan",
+    "Parse YAML job files with `name`, `command`, `depends_on`",
+]
+
+
+def _check_placeholder_content(project_path: Path) -> None:
+    """Warn if PROJECT.md / REQUIREMENTS.md still contain placeholder template content."""
+    files_with_placeholders: list[str] = []
+    for filename in ["PROJECT.md", "REQUIREMENTS.md"]:
+        filepath = project_path / filename
+        if not filepath.exists():
+            continue
+        content = filepath.read_text(encoding="utf-8")
+        if any(marker in content for marker in _PLACEHOLDER_MARKERS):
+            files_with_placeholders.append(filename)
+
+    if not files_with_placeholders:
+        return
+
+    console.print(
+        Panel(
+            "[bold yellow]The following files still contain placeholder/example content:[/bold yellow]\n"
+            + "".join(f"  - {f}\n" for f in files_with_placeholders)
+            + "\nThe planner will generate a plan based on whatever is in these files.\n"
+            "If you haven't edited them, you'll get a plan for the example project, "
+            "not yours.",
+            title="Placeholder Content Detected",
+            border_style="yellow",
+        )
+    )
+    if not typer.confirm("Continue anyway?"):
+        console.print("[dim]Edit your PROJECT.md and REQUIREMENTS.md, then re-run.[/dim]")
+        raise typer.Exit(0)
+
+
 def _do_init(
     project_name: str | None,
     path: Path | None,
-    interactive: bool,
     overwrite: bool,
     prompt: str | None = None,
+    yes: bool = False,
 ) -> None:
-    if interactive:
+    is_tty = console.is_terminal
+
+    # Interactive flow: no name provided and we're in a terminal
+    if not project_name and not yes and is_tty:
+        default_name = (path or Path.cwd()).name if path else "my-project"
         console.print("[bold blue]sago Project Initialization[/bold blue]\n")
-        project_name = typer.prompt("Project name", default=project_name or "my-project")
+        project_name = typer.prompt("Project name", default=default_name)
+
+        if not prompt:
+            description = typer.prompt(
+                "Describe what you want to build (or press Enter to skip)",
+                default="",
+            )
+            if description:
+                prompt = description
 
     if not project_name:
-        console.print("[red]Project name is required[/red]")
+        console.print("[red]Project name is required. Pass a name or use interactive mode.[/red]")
         raise typer.Exit(1)
 
     project_path = path or Path.cwd() / project_name
     manager = ProjectManager(config)
     manager.init_project(project_path, project_name=project_name, overwrite=overwrite)
 
+    prompt_succeeded = False
     if prompt:
         console.print("[dim]Generating project files from prompt...[/dim]")
         try:
+            _check_llm_configured()
             asyncio.run(manager.generate_from_prompt(prompt, project_path, project_name))
             console.print("[green]Generated PROJECT.md and REQUIREMENTS.md from prompt[/green]")
+            prompt_succeeded = True
+        except typer.Exit:
+            raise
         except Exception as e:
-            console.print(f"[yellow]LLM generation failed: {e}[/yellow]")
-            console.print("[dim]Template files are still available — edit them manually[/dim]")
+            console.print(
+                Panel(
+                    f"[bold red]Failed to generate project files from your prompt.[/bold red]\n\n"
+                    f"Error: {e}\n\n"
+                    "[yellow]Your description was NOT used.[/yellow]\n"
+                    "The project files contain placeholder examples, not your project.\n"
+                    "You need to either:\n"
+                    "  1. Configure an LLM API key and re-run [cyan]sago init[/cyan]\n"
+                    "  2. Manually edit PROJECT.md and REQUIREMENTS.md",
+                    title="Prompt Generation Failed",
+                    border_style="red",
+                )
+            )
 
     console.print(f"\n[green]Project initialized at: {project_path}[/green]")
     console.print("\n[bold]Next steps:[/bold]")
     console.print("  1. cd " + str(project_path))
-    console.print("  2. Edit PROJECT.md and REQUIREMENTS.md")
-    console.print("  3. Run: sago plan")
-    console.print("  4. Run: sago execute")
+    if prompt_succeeded:
+        console.print("  2. Run: sago plan")
+        console.print("  3. Point your coding agent at the project (it reads CLAUDE.md)")
+    else:
+        console.print("  2. Edit PROJECT.md and REQUIREMENTS.md")
+        console.print("  3. Run: sago plan")
+        console.print("  4. Point your coding agent at the project (it reads CLAUDE.md)")
 
 
 @app.command()
 def init(
     project_name: str | None = typer.Argument(None, help="Project name"),
     path: Path | None = typer.Option(None, "--path", "-p", help="Project path"),
-    interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive mode"),
     overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing files"),
     prompt: str | None = typer.Option(
         None, "--prompt", help="Generate project files from a one-line description"
     ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Non-interactive mode, accept defaults"),
 ) -> None:
-    if prompt and interactive:
-        console.print("[red]--prompt and --interactive are mutually exclusive[/red]")
-        raise typer.Exit(1)
+    """Initialize a new sago project.
+
+    When run without a project name, prompts interactively for the name and
+    an optional description.  Pass --yes / -y to skip all prompts.
+    """
     try:
-        _do_init(project_name, path, interactive, overwrite, prompt=prompt)
+        _do_init(project_name, path, overwrite, prompt=prompt, yes=yes)
     except FileExistsError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1) from None
@@ -112,7 +226,43 @@ def _show_task_progress(phases: list, completed_tasks: list[str], detailed: bool
             console.print(f"      {style}{task.id}: {task.name}[/{style.strip('[')}]")
 
 
+def _show_plan_summary(project_path: Path) -> list[str]:
+    """Read PLAN.md, display phase/task summary and dependencies. Returns dependency list."""
+    parser = MarkdownParser()
+    plan_file = project_path / "PLAN.md"
+    content = plan_file.read_text(encoding="utf-8")
+
+    phases = parser.parse_xml_tasks(content)
+    dependencies = parser.parse_dependencies(content)
+
+    # Phase/task table
+    table = Table(title="Plan Summary", show_header=True)
+    table.add_column("Phase", style="cyan")
+    table.add_column("Task ID", style="dim")
+    table.add_column("Task Name")
+
+    for phase in phases:
+        for i, task in enumerate(phase.tasks):
+            phase_label = phase.name if i == 0 else ""
+            table.add_row(phase_label, task.id, task.name)
+
+    console.print(table)
+
+    total_tasks = sum(len(p.tasks) for p in phases)
+    console.print(f"\n   [bold]{len(phases)}[/bold] phases, [bold]{total_tasks}[/bold] tasks")
+
+    # Dependencies panel
+    if dependencies:
+        dep_text = "\n".join(f"  - {dep}" for dep in dependencies)
+        console.print(
+            Panel(dep_text, title="Dependencies", border_style="blue")
+        )
+
+    return dependencies
+
+
 def _do_status(project_path: Path, detailed: bool) -> None:
+    _load_config(project_path)
     manager = ProjectManager(config)
     parser = MarkdownParser()
 
@@ -153,9 +303,9 @@ def _do_status(project_path: Path, detailed: bool) -> None:
             console.print(f"  - {blocker}")
 
     if plan_file.exists():
-        console.print("\n[bold]Available Commands:[/bold]")
-        console.print("   sago execute     - Execute tasks from plan")
-        console.print("   sago run         - Complete workflow (plan + execute)")
+        console.print("\n[bold]Next steps:[/bold]")
+        console.print("   Point your coding agent at this project")
+        console.print("   Claude Code reads CLAUDE.md automatically")
         console.print("   sago status -d   - Detailed task status")
     else:
         console.print("\n[bold]Next Steps:[/bold]")
@@ -176,6 +326,9 @@ def status(
 
 
 def _do_plan(project_path: Path, force: bool) -> None:
+    _load_config(project_path)
+    _check_llm_configured()
+
     manager = ProjectManager(config)
 
     if not manager.is_sago_project(project_path):
@@ -195,6 +348,8 @@ def _do_plan(project_path: Path, force: bool) -> None:
         console.print(f"[red]Missing required files: {', '.join(missing)}[/red]")
         raise typer.Exit(1)
 
+    _check_placeholder_content(project_path)
+
     orchestrator = Orchestrator(config=config)
 
     with Progress(
@@ -207,23 +362,19 @@ def _do_plan(project_path: Path, force: bool) -> None:
             orchestrator.run_workflow(
                 project_path=project_path,
                 plan=True,
-                execute=False,
             )
         )
 
     if result.success:
         console.print("\n[green]Plan generated successfully![/green]")
-        console.print(f"   {plan_file}")
+        console.print(f"   {plan_file}\n")
 
-        if result.task_executions:
-            metadata = result.task_executions[0].execution_result.metadata
-            console.print("\n[bold]Summary:[/bold]")
-            console.print(f"   Phases: {metadata.get('num_phases', 0)}")
-            console.print(f"   Tasks: {metadata.get('num_tasks', 0)}")
+        _show_plan_summary(project_path)
 
         console.print("\n[bold]Next steps:[/bold]")
         console.print("   1. Review PLAN.md")
-        console.print("   2. Run: sago execute")
+        console.print("   2. Point your coding agent at the project")
+        console.print("      Claude Code reads CLAUDE.md automatically")
     else:
         console.print(f"[red]Plan generation failed: {result.error}[/red]")
         raise typer.Exit(1)
@@ -242,752 +393,475 @@ def plan(
         raise typer.Exit(1) from None
 
 
-def _do_execute(
-    project_path: Path,
-    verify: bool,
-    max_retries: int,
-    continue_on_failure: bool,
-    compress: bool,
-    trace: bool = False,
+def _get_phase_status(
+    phases: list, task_states: list[dict[str, str]]
+) -> list[dict[str, Any]]:
+    """Group task states by phase, returning per-phase status.
+
+    Returns list of dicts: {name, done, failed, pending, total, status}
+    where status is 'complete', 'partial', or 'pending'.
+    """
+    state_by_id = {ts["id"]: ts["status"] for ts in task_states}
+    result: list[dict[str, Any]] = []
+    for phase in phases:
+        done = sum(1 for t in phase.tasks if state_by_id.get(t.id) == "done")
+        failed = sum(1 for t in phase.tasks if state_by_id.get(t.id) == "failed")
+        pending = len(phase.tasks) - done - failed
+        if done == len(phase.tasks):
+            status = "complete"
+        elif done > 0 or failed > 0:
+            status = "partial"
+        else:
+            status = "pending"
+        result.append({
+            "name": phase.name,
+            "done": done,
+            "failed": failed,
+            "pending": pending,
+            "total": len(phase.tasks),
+            "status": status,
+        })
+    return result
+
+
+def _write_phase_summary_to_state(
+    state_file: Path, phase_name: str, review_output: str
 ) -> None:
+    """Append a phase summary to STATE.md (skips if already present)."""
+    header = f"## Phase Summary: {phase_name}"
+    existing = state_file.read_text(encoding="utf-8") if state_file.exists() else ""
+    if header in existing:
+        return
+    block = f"\n{header}\n\n{review_output}\n"
+    state_file.write_text(existing + block, encoding="utf-8")
+
+
+def _show_plan_diff(
+    old_phases: list, new_phases: list
+) -> None:
+    """Show added/modified/removed tasks between old and new plan."""
+    old_task_ids = {t.id for p in old_phases for t in p.tasks}
+    new_task_ids = {t.id for p in new_phases for t in p.tasks}
+    old_tasks_by_id = {t.id: t for p in old_phases for t in p.tasks}
+    new_tasks_by_id = {t.id: t for p in new_phases for t in p.tasks}
+
+    added = new_task_ids - old_task_ids
+    removed = old_task_ids - new_task_ids
+    modified = set()
+    for tid in old_task_ids & new_task_ids:
+        old_t = old_tasks_by_id[tid]
+        new_t = new_tasks_by_id[tid]
+        if (old_t.name != new_t.name or old_t.action != new_t.action
+                or old_t.files != new_t.files or old_t.verify != new_t.verify):
+            modified.add(tid)
+
+    console.print(
+        f"\n[bold]Changes:[/bold] "
+        f"[green]+{len(added)} added[/green], "
+        f"[yellow]~{len(modified)} modified[/yellow], "
+        f"[red]-{len(removed)} removed[/red]"
+    )
+
+    if added:
+        for tid in sorted(added):
+            console.print(f"  [green]+ {tid}: {new_tasks_by_id[tid].name}[/green]")
+    if modified:
+        for tid in sorted(modified):
+            console.print(f"  [yellow]~ {tid}: {new_tasks_by_id[tid].name}[/yellow]")
+    if removed:
+        for tid in sorted(removed):
+            console.print(f"  [red]- {tid}: {old_tasks_by_id[tid].name}[/red]")
+
+
+def _do_replan(project_path: Path) -> None:
+    _load_config(project_path)
+    _check_llm_configured()
+
     manager = ProjectManager(config)
+    parser = MarkdownParser()
 
     if not manager.is_sago_project(project_path):
         console.print(f"[red]Not a sago project: {project_path}[/red]")
+        console.print("[yellow]Run 'sago init' first[/yellow]")
         raise typer.Exit(1)
 
     plan_file = project_path / "PLAN.md"
     if not plan_file.exists():
-        console.print("[red]PLAN.md not found[/red]")
-        console.print("[yellow]Run 'sago plan' first[/yellow]")
+        console.print("[red]No PLAN.md found.[/red]")
+        console.print("[yellow]Run `sago plan` first[/yellow]")
         raise typer.Exit(1)
 
-    updates: dict[str, object] = {}
-    if compress:
-        updates["enable_compression"] = True
-    if trace:
-        updates["enable_tracing"] = True
-    run_config = config.model_copy(update=updates) if updates else config
+    plan_content = plan_file.read_text(encoding="utf-8")
+    old_phases = parser.parse_xml_tasks(plan_content)
 
-    dashboard_server = None
-    if trace:
-        from sago.web.server import start_dashboard
+    # Parse STATE.md for current status
+    state_file = project_path / "STATE.md"
+    task_states: list[dict[str, str]] = []
+    if state_file.exists():
+        state_content = state_file.read_text(encoding="utf-8")
+        task_states = parser.parse_state_tasks(state_content, old_phases)
+    else:
+        for phase in old_phases:
+            for task in phase.tasks:
+                task_states.append({
+                    "id": task.id, "name": task.name,
+                    "status": "pending", "phase_name": phase.name,
+                })
 
-        trace_path = project_path / ".planning" / "trace.jsonl"
-        dashboard_server = start_dashboard(trace_path, open_browser=True)
-        console.print(
-            f"[dim]Dashboard: http://127.0.0.1:{dashboard_server.server_address[1]}[/dim]"
+    done_count = sum(1 for ts in task_states if ts["status"] == "done")
+    failed_count = sum(1 for ts in task_states if ts["status"] == "failed")
+    pending_count = sum(1 for ts in task_states if ts["status"] == "pending")
+    total = done_count + failed_count + pending_count
+
+    # Show per-phase breakdown
+    phase_statuses = _get_phase_status(old_phases, task_states)
+
+    console.print(
+        f"\n[bold]Current plan:[/bold] {total} tasks — "
+        f"[green]{done_count} done[/green], "
+        f"[red]{failed_count} failed[/red], "
+        f"[dim]{pending_count} pending[/dim]"
+    )
+
+    for ps in phase_statuses:
+        if ps["status"] == "complete":
+            icon = "[green]✓[/green]"
+        elif ps["status"] == "partial":
+            icon = "[yellow]~[/yellow]"
+        else:
+            icon = "[dim]..[/dim]"
+        console.print(f"   {icon} {ps['name']} ({ps['done']}/{ps['total']} done)")
+
+    # Review completed/partial phases that haven't been reviewed yet
+    review_prompt = parser.parse_review_prompt(plan_content)
+    if not review_prompt:
+        review_prompt = (
+            "Review each completed task for: code correctness, adherence to requirements, "
+            "edge-case handling, security issues, and consistency with the project style."
         )
 
-    orchestrator = Orchestrator(config=run_config)
-    console.print("[bold blue]Executing tasks...[/bold blue]\n")
+    orchestrator = Orchestrator(config=config)
+    review_outputs: list[str] = []
+
+    existing_state = state_file.read_text(encoding="utf-8") if state_file.exists() else ""
+
+    for i, ps in enumerate(phase_statuses):
+        if ps["status"] == "pending":
+            continue
+        summary_header = f"## Phase Summary: {ps['name']}"
+        if summary_header in existing_state:
+            continue
+
+        phase = old_phases[i]
+        console.print(f"\nReviewing {ps['name']}...")
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            progress.add_task(description=f"Reviewing {ps['name']}...", total=None)
+            review_result = asyncio.run(
+                orchestrator.run_review(project_path, phase, review_prompt)
+            )
+
+        if review_result.success:
+            review_text = review_result.output
+            review_outputs.append(review_text)
+            console.print(
+                Panel(review_text, title=f"Review: {ps['name']}", border_style="cyan")
+            )
+            _write_phase_summary_to_state(state_file, ps["name"], review_text)
+        else:
+            console.print(
+                f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]"
+            )
+
+    # Prompt for feedback
+    feedback = typer.prompt(
+        "\nWhat do you want to change? (Enter to skip)",
+        default="",
+    )
+
+    if not feedback:
+        if review_outputs:
+            console.print("[green]Phase review saved to STATE.md. No plan changes.[/green]")
+        else:
+            console.print("[dim]No changes.[/dim]")
+        return
+
+    # Full replan with review context + repo map
+    combined_review = "\n\n".join(review_outputs) if review_outputs else ""
+
+    from sago.utils.repo_map import generate_repo_map
+
+    repo_map = generate_repo_map(project_path)
+
+    old_plan_backup = plan_file.read_text(encoding="utf-8")
 
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task(description="Running workflow...", total=None)
+        progress.add_task(description="Updating plan...", total=None)
         result = asyncio.run(
-            orchestrator.run_workflow(
+            orchestrator.run_replan_workflow(
                 project_path=project_path,
-                plan=False,
-                execute=True,
-                verify=verify,
-                max_retries=max_retries,
-                continue_on_failure=continue_on_failure,
+                feedback=feedback,
+                review_context=combined_review,
+                repo_map=repo_map,
             )
         )
-        progress.update(task, completed=True)
 
-    console.print("\n[bold]Execution Complete![/bold]\n")
-    _show_workflow_result(result)
-
-    if result.task_executions:
-        for task_exec in result.task_executions:
-            if task_exec.retry_count > 0:
-                console.print(
-                    f"     [yellow]Retries for {task_exec.task.id}: "
-                    f"{task_exec.retry_count}[/yellow]"
-                )
-            if not task_exec.success:
-                error = task_exec.execution_result.error or "Unknown error"
-                console.print(f"     [red]Error: {error}[/red]")
-
-    if result.success:
-        console.print("\n[green]All tasks completed successfully![/green]")
-        console.print("\n[bold]Next steps:[/bold]")
-        console.print("   1. Review generated code")
-        console.print("   2. Run tests: pytest")
-        console.print("   3. Check STATE.md for progress log")
-    else:
-        console.print("\n[yellow]Some tasks failed[/yellow]")
-        console.print("\n[bold]Troubleshooting:[/bold]")
-        console.print("   1. Check STATE.md for error details")
-        console.print("   2. Fix issues manually")
-        console.print("   3. Re-run: sago execute")
-
-    raise typer.Exit(0 if result.success else 1)
-
-
-@app.command()
-def execute(
-    project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
-    verify: bool = typer.Option(True, "--verify/--no-verify", help="Run verification commands"),
-    max_retries: int = typer.Option(2, "--max-retries", help="Maximum retries per task"),
-    continue_on_failure: bool = typer.Option(
-        False, "--continue-on-failure", help="Continue if a task fails"
-    ),
-    compress: bool = typer.Option(False, "--compress", help="Enable context compression"),
-    trace: bool = typer.Option(False, "--trace", help="Enable tracing + open dashboard"),
-) -> None:
-    """Execute tasks from PLAN.md."""
-    try:
-        _do_execute(project_path, verify, max_retries, continue_on_failure, compress, trace)
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1) from None
-
-
-def _show_workflow_result(result: Any) -> None:
-    table = Table(show_header=True)
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green" if result.success else "red")
-
-    table.add_row("Status", "SUCCESS" if result.success else "FAILED")
-    table.add_row("Total Tasks", str(result.total_tasks))
-    table.add_row("Completed", str(result.completed_tasks))
-    table.add_row("Failed", str(result.failed_tasks))
-    table.add_row("Duration", f"{result.total_duration:.1f}s")
-    console.print(table)
-
-    if result.task_executions:
-        console.print("\n[bold]Task Summary:[/bold]")
-        for task_exec in result.task_executions:
-            mark = "[green]ok[/green]" if task_exec.success else "[red]FAIL[/red]"
-            console.print(f"  {mark} {task_exec.task.id}: {task_exec.task.name}")
-
-
-def _validate_project(project_path: Path) -> None:
-    """Validate project exists and has required files. Exits on failure."""
-    manager = ProjectManager(config)
-    if not manager.is_sago_project(project_path):
-        console.print(f"[red]Not a sago project: {project_path}[/red]")
+    if not result.success:
+        console.print(f"[red]Replan failed: {result.error}[/red]")
         raise typer.Exit(1)
 
-    required_files = ["PROJECT.md", "REQUIREMENTS.md"]
-    missing = [f for f in required_files if not (project_path / f).exists()]
-    if missing:
-        console.print(f"[red]Missing required files: {', '.join(missing)}[/red]")
-        raise typer.Exit(1)
+    # Parse new plan and show diff
+    new_content = plan_file.read_text(encoding="utf-8")
+    new_phases = parser.parse_xml_tasks(new_content)
 
+    _show_plan_diff(old_phases, new_phases)
 
-def _run_dry_run(project_path: Path, generate_plan: bool, verify: bool) -> None:
-    """Show cost estimate and prompt for confirmation. Exits if cancelled."""
-    console.print("\n[bold cyan]Cost Estimation Mode[/bold cyan]\n")
-
-    plan_file = project_path / "PLAN.md"
-    if not plan_file.exists():
-        console.print("[red]PLAN.md not found. Run without --dry-run first.[/red]")
-        raise typer.Exit(1)
-
-    parser = MarkdownParser()
-    phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
-    all_tasks = [task for phase in phases for task in phase.tasks]
-
-    estimator = CostEstimator(model=config.llm_model)
-    estimate = estimator.estimate_workflow(all_tasks, generate_plan=generate_plan, verify=verify)
-    console.print(estimate)
-
-    console.print("\n[bold]Proceed with execution?[/bold]")
-    if not typer.confirm("Continue"):
-        console.print("[yellow]Cancelled[/yellow]")
+    if not typer.confirm("\nApply changes?"):
+        plan_file.write_text(old_plan_backup, encoding="utf-8")
+        console.print("[dim]Changes reverted.[/dim]")
         raise typer.Exit(0)
 
-
-def _print_enabled_flags(
-    use_cache: bool,
-    git_commit: bool,
-    auto_retry: bool,
-    compress: bool,
-    trace: bool = False,
-) -> None:
-    """Print which optional flags are enabled."""
-    for flag, label in [
-        (use_cache, "Smart caching"),
-        (git_commit, "Git auto-commit"),
-        (auto_retry, "Auto-retry"),
-        (compress, "Context compression"),
-        (trace, "Tracing dashboard"),
-    ]:
-        if flag:
-            console.print(f"[dim]{label} enabled[/dim]")
-
-
-def _do_run(
-    project_path: Path,
-    verify: bool,
-    max_retries: int,
-    continue_on_failure: bool,
-    force_plan: bool,
-    dry_run: bool,
-    use_cache: bool,
-    git_commit: bool,
-    auto_retry: bool,
-    compress: bool,
-    trace: bool = False,
-) -> None:
-    _validate_project(project_path)
-
-    plan_file = project_path / "PLAN.md"
-    if plan_file.exists() and not force_plan:
-        console.print("[yellow]PLAN.md already exists[/yellow]")
-        generate_plan = typer.confirm("Regenerate plan?")
-    else:
-        generate_plan = True
-
-    if dry_run:
-        _run_dry_run(project_path, generate_plan, verify)
-
-    updates: dict[str, object] = {}
-    if compress:
-        updates["enable_compression"] = True
-    if trace:
-        updates["enable_tracing"] = True
-    run_config = config.model_copy(update=updates) if updates else config
-
-    _print_enabled_flags(use_cache, git_commit, auto_retry, compress, trace)
-
-    dashboard_server = None
-    if trace:
-        from sago.web.server import start_dashboard
-
-        trace_path = project_path / ".planning" / "trace.jsonl"
-        dashboard_server = start_dashboard(trace_path, open_browser=True)
-        console.print(
-            f"[dim]Dashboard: http://127.0.0.1:{dashboard_server.server_address[1]}[/dim]"
-        )
-
-    orchestrator = Orchestrator(config=run_config)
-    console.print("[bold blue]Running complete workflow...[/bold blue]\n")
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task(description="Executing workflow...", total=None)
-        result = asyncio.run(
-            orchestrator.run_workflow(
-                project_path=project_path,
-                plan=generate_plan,
-                execute=True,
-                verify=verify,
-                max_retries=max_retries,
-                continue_on_failure=continue_on_failure,
-                git_commit=git_commit,
-                self_heal=auto_retry,
-                use_cache=use_cache,
-            )
-        )
-        progress.update(task, completed=True)
-
-    console.print("\n[bold]Workflow Complete![/bold]\n")
-    _show_workflow_result(result)
-
-    if result.success:
-        console.print("\n[green]Workflow completed successfully![/green]")
-    else:
-        console.print("\n[yellow]Workflow completed with errors[/yellow]")
-        console.print("   Check STATE.md for details")
-
-    raise typer.Exit(0 if result.success else 1)
+    console.print("\n[green]Plan updated successfully![/green]")
+    _show_plan_summary(project_path)
 
 
 @app.command()
-def run(
+def replan(
     project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
-    verify: bool = typer.Option(True, "--verify/--no-verify", help="Run verification commands"),
-    max_retries: int = typer.Option(2, "--max-retries", help="Maximum retries per task"),
-    continue_on_failure: bool = typer.Option(
-        False, "--continue-on-failure", help="Continue if a task fails"
-    ),
-    force_plan: bool = typer.Option(False, "--force-plan", help="Regenerate PLAN.md if exists"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Estimate cost without executing"),
-    use_cache: bool = typer.Option(True, "--cache/--no-cache", help="Use smart caching"),
-    git_commit: bool = typer.Option(False, "--git-commit", help="Auto-commit after each task"),
-    auto_retry: bool = typer.Option(False, "--auto-retry", help="Auto-fix failed tasks"),
-    compress: bool = typer.Option(False, "--compress", help="Enable context compression"),
-    trace: bool = typer.Option(False, "--trace", help="Enable tracing + open dashboard"),
 ) -> None:
+    """Update PLAN.md based on your feedback without regenerating from scratch."""
     try:
-        _do_run(
-            project_path,
-            verify,
-            max_retries,
-            continue_on_failure,
-            force_plan,
-            dry_run,
-            use_cache,
-            git_commit,
-            auto_retry,
-            compress,
-            trace,
-        )
+        _do_replan(project_path)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from None
 
 
-@app.command(name="trace")
-def trace_cmd(
-    project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
-    port: int = typer.Option(0, "--port", help="Server port (0=auto)"),
-    trace_file: Path | None = typer.Option(None, "--file", "-f", help="Trace JSONL file"),
-    demo: bool = typer.Option(False, "--demo", help="Generate sample trace and open dashboard"),
-) -> None:
-    """Open the observability dashboard for a past trace."""
-    from sago.web.server import start_dashboard
+def _do_watch(project_path: Path, port: int) -> None:
+    import time
 
-    if demo:
-        path = _generate_demo_trace()
-    else:
-        path = trace_file or (project_path / ".planning" / "trace.jsonl")
-        if not path.exists():
-            console.print(f"[red]Trace file not found: {path}[/red]")
-            console.print("[yellow]Run with --trace first, or use --demo for a sample[/yellow]")
-            raise typer.Exit(1)
+    from sago.web.server import start_watch_server
+    from sago.web.watcher import ProjectWatcher
 
-    server = start_dashboard(path, port=port, open_browser=True)
+    _load_config(project_path)
+    manager = ProjectManager(config)
+    parser = MarkdownParser()
+
+    if not manager.is_sago_project(project_path):
+        console.print(f"[red]Not a sago project: {project_path}[/red]")
+        raise typer.Exit(1)
+
+    plan_file = project_path / "PLAN.md"
+    if not plan_file.exists():
+        console.print("[red]No PLAN.md found.[/red]")
+        console.print("[yellow]Run `sago plan` first[/yellow]")
+        raise typer.Exit(1)
+
+    content = plan_file.read_text(encoding="utf-8")
+    phases = parser.parse_xml_tasks(content)
+    dependencies = parser.parse_dependencies(content)
+
+    plan_data = {
+        "project_name": project_path.name,
+        "phases": [p.to_dict() for p in phases],
+        "dependencies": dependencies,
+    }
+
+    trace_path = project_path / config.planning_dir / "trace.jsonl"
+
+    watcher = ProjectWatcher(project_path=project_path, plan_phases=phases)
+    server = start_watch_server(
+        project_path=project_path,
+        watcher=watcher,
+        plan_data=plan_data,
+        trace_path=trace_path,
+        port=port,
+        open_browser=True,
+    )
+
     url = f"http://127.0.0.1:{server.server_address[1]}"
-    console.print(f"[green]Dashboard running at {url}[/green]")
+    console.print(f"[green]sago watch running at {url}[/green]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
 
     try:
-        import time
-
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         server.shutdown()
-        console.print("\n[dim]Dashboard stopped[/dim]")
+        console.print("\n[dim]Stopped[/dim]")
 
 
-def _build_planning_events(evt: Any) -> list[dict]:
-    """Build demo events for the planning phase."""
-    return [
-        evt(0, "workflow_start", "Orchestrator", {"project_path": "/home/user/weather-app"}),
-        evt(
-            0.5,
-            "file_read",
-            "PlannerAgent",
-            {
-                "path": "PROJECT.md",
-                "size_bytes": 1247,
-                "content_preview": "# Weather Dashboard\n\nA modern weather dashboard built with "
-                "FastAPI and PostgreSQL.\n\n## Tech Stack\n- Python 3.12\n- FastAPI + Uvicorn\n"
-                "- PostgreSQL + SQLAlchemy\n- Jinja2 templates\n- OpenWeatherMap API",
-            },
-        ),
-        evt(
-            0.8,
-            "file_read",
-            "PlannerAgent",
-            {
-                "path": "REQUIREMENTS.md",
-                "size_bytes": 892,
-                "content_preview": "# Requirements\n\n* [x] **REQ-1:** Display current weather for "
-                "user's location\n* [ ] **REQ-2:** Show 5-day forecast with min/max temperatures\n"
-                "* [ ] **REQ-3:** Allow searching by city name with autocomplete",
-            },
-        ),
-        evt(
-            1.0,
-            "file_read",
-            "PlannerAgent",
-            {
-                "path": "STATE.md",
-                "size_bytes": 340,
-                "content_preview": "# State\n\n## Completed Tasks\nNone yet.",
-            },
-        ),
-        evt(
-            1.2,
-            "llm_call",
-            "PlannerAgent",
-            {
-                "model": "gpt-4o",
-                "prompt_tokens": 2140,
-                "completion_tokens": 1860,
-                "total_tokens": 4000,
-                "duration_s": 6.3,
-                "prompt_preview": "Based on the project context below, generate a detailed PLAN.md "
-                "with atomic tasks.\n\nProject Context:\n=== PROJECT.md ===\n# Weather Dashboard\n"
-                "A modern weather dashboard built with FastAPI...",
-                "response_preview": '<phases>\n  <phase name="Phase 1: Foundation">\n    '
-                '<task id="1.1">\n      <name>Create project structure and config</name>...',
-            },
-            duration_ms=6300,
-        ),
-        evt(
-            7.6,
-            "file_write",
-            "PlannerAgent",
-            {
-                "path": "PLAN.md",
-                "size_bytes": 4120,
-                "content_preview": '# PLAN.md\n\n```xml\n<phases>\n  <phase name="Phase 1">\n'
-                '    <task id="1.1">\n      <name>Create project structure and config</name>...',
-            },
-        ),
-    ]
-
-
-def _build_foundation_task_events(evt: Any) -> list[dict]:
-    """Build demo events for Phase 1 foundation tasks (1.1 + 1.2)."""
-    return [
-        # Task 1.1: Create project structure
-        evt(
-            8.0,
-            "task_start",
-            "Orchestrator",
-            {
-                "task_id": "1.1",
-                "task_name": "Create project structure and config",
-                "phase": "Phase 1: Foundation",
-                "files": ["src/config.py", "src/__init__.py", "pyproject.toml"],
-            },
-        ),
-        evt(
-            8.5,
-            "file_read",
-            "ExecutorAgent",
-            {
-                "path": "PROJECT.md",
-                "size_bytes": 1247,
-                "content_preview": "# Weather Dashboard\n\nA modern weather dashboard...",
-            },
-        ),
-        evt(
-            8.7,
-            "file_read",
-            "ExecutorAgent",
-            {
-                "path": "REQUIREMENTS.md",
-                "size_bytes": 892,
-                "content_preview": "# Requirements\n\n* [x] **REQ-1:** Display current weather...",
-            },
-        ),
-        evt(
-            9.0,
-            "llm_call",
-            "ExecutorAgent",
-            {
-                "model": "gpt-4o",
-                "prompt_tokens": 1850,
-                "completion_tokens": 1420,
-                "total_tokens": 3270,
-                "duration_s": 5.1,
-                "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 1.1\n"
-                "Name: Create project structure and config\n\nAction:\nSet up FastAPI project...",
-                "response_preview": "=== FILE: src/config.py ===\n```python\nfrom pydantic_settings "
-                "import BaseSettings\nfrom functools import lru_cache\n\nclass Settings(BaseSettings):"
-                '\n    app_name: str = "Weather Dashboard"\n```',
-            },
-            duration_ms=5100,
-        ),
-        evt(14.2, "file_write", "ExecutorAgent", {"path": "src/config.py", "size_bytes": 380}),
-        evt(14.4, "file_write", "ExecutorAgent", {"path": "src/__init__.py", "size_bytes": 42}),
-        evt(14.6, "file_write", "ExecutorAgent", {"path": "pyproject.toml", "size_bytes": 610}),
-        evt(
-            15.0,
-            "verify_run",
-            "VerifierAgent",
-            {
-                "command": "python -c \"from src.config import Settings; print('OK')\"",
-                "exit_code": 0,
-                "success": True,
-                "duration_s": 0.8,
-                "stdout": "OK\n",
-                "stderr": "",
-            },
-        ),
-        evt(
-            15.9,
-            "task_end",
-            "Orchestrator",
-            {
-                "task_id": "1.1",
-                "task_name": "Create project structure and config",
-                "success": True,
-                "duration_s": 7.9,
-            },
-        ),
-        # Task 1.2: Database models
-        evt(
-            16.0,
-            "task_start",
-            "Orchestrator",
-            {
-                "task_id": "1.2",
-                "task_name": "Set up database models",
-                "phase": "Phase 1: Foundation",
-                "files": ["src/models.py", "src/database.py"],
-            },
-        ),
-        evt(
-            16.5,
-            "file_read",
-            "ExecutorAgent",
-            {
-                "path": "src/config.py",
-                "size_bytes": 380,
-            },
-        ),
-        evt(
-            17.0,
-            "llm_call",
-            "ExecutorAgent",
-            {
-                "model": "gpt-4o",
-                "prompt_tokens": 2100,
-                "completion_tokens": 1650,
-                "total_tokens": 3750,
-                "duration_s": 5.8,
-                "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 1.2\n"
-                "Name: Set up database models\n\nAction:\nCreate SQLAlchemy models...",
-                "response_preview": "=== FILE: src/models.py ===\n```python\nfrom sqlalchemy import "
-                "Column, Integer, String, Float, DateTime, func\nfrom sqlalchemy.orm import "
-                "DeclarativeBase\n\nclass Base(DeclarativeBase):\n    pass\n```",
-            },
-            duration_ms=5800,
-        ),
-        evt(22.9, "file_write", "ExecutorAgent", {"path": "src/models.py", "size_bytes": 720}),
-        evt(23.1, "file_write", "ExecutorAgent", {"path": "src/database.py", "size_bytes": 510}),
-        evt(
-            23.5,
-            "verify_run",
-            "VerifierAgent",
-            {
-                "command": "python -c \"from src.models import Base, SearchHistory; print('OK')\"",
-                "exit_code": 0,
-                "success": True,
-                "duration_s": 0.6,
-                "stdout": "OK\n",
-                "stderr": "",
-            },
-        ),
-        evt(
-            24.2,
-            "task_end",
-            "Orchestrator",
-            {
-                "task_id": "1.2",
-                "task_name": "Set up database models",
-                "success": True,
-                "duration_s": 8.2,
-            },
-        ),
-    ]
-
-
-def _build_retry_task_events(evt: Any) -> list[dict]:
-    """Build demo events for task 2.1 (weather API client with failure + retry)."""
-    return [
-        evt(
-            24.5,
-            "task_start",
-            "Orchestrator",
-            {
-                "task_id": "2.1",
-                "task_name": "Build weather API client",
-                "phase": "Phase 2: Core Features",
-                "files": ["src/weather.py", "tests/test_weather.py"],
-            },
-        ),
-        evt(25.0, "file_read", "ExecutorAgent", {"path": "src/config.py", "size_bytes": 380}),
-        evt(
-            25.5,
-            "llm_call",
-            "ExecutorAgent",
-            {
-                "model": "gpt-4o",
-                "prompt_tokens": 2400,
-                "completion_tokens": 2100,
-                "total_tokens": 4500,
-                "duration_s": 7.2,
-                "prompt_preview": "Generate code to complete this task:\n\n=== TASK ===\nID: 2.1\n"
-                "Name: Build weather API client\n\nAction:\nCreate an async HTTP client...",
-                "response_preview": "=== FILE: src/weather.py ===\n```python\nimport httpx\nfrom "
-                "dataclasses import dataclass\n\n@dataclass\nclass WeatherData:\n    city: str\n```",
-            },
-            duration_ms=7200,
-        ),
-        evt(32.8, "file_write", "ExecutorAgent", {"path": "src/weather.py", "size_bytes": 1240}),
-        evt(
-            33.0,
-            "file_write",
-            "ExecutorAgent",
-            {
-                "path": "tests/test_weather.py",
-                "size_bytes": 890,
-            },
-        ),
-        # First verify FAILS
-        evt(
-            33.5,
-            "verify_run",
-            "VerifierAgent",
-            {
-                "command": "python -m pytest tests/test_weather.py -v",
-                "exit_code": 1,
-                "success": False,
-                "duration_s": 2.1,
-                "stdout": "tests/test_weather.py::test_get_current_weather FAILED\n\n"
-                "E   ModuleNotFoundError: No module named 'src.config'",
-                "stderr": "FAILED tests/test_weather.py::test_get_current_weather - "
-                "ModuleNotFoundError",
-            },
-        ),
-        # Retry LLM call
-        evt(
-            35.8,
-            "llm_call",
-            "ExecutorAgent",
-            {
-                "model": "gpt-4o",
-                "prompt_tokens": 2800,
-                "completion_tokens": 1900,
-                "total_tokens": 4700,
-                "duration_s": 6.4,
-                "prompt_preview": "The previous attempt failed with:\nModuleNotFoundError: "
-                "No module named 'src.config'\n\nFix the test to use proper imports...",
-                "response_preview": "=== FILE: tests/test_weather.py ===\n```python\nimport sys\n"
-                "sys.path.insert(0, '.')\nimport pytest\n```",
-            },
-            duration_ms=6400,
-        ),
-        evt(
-            42.3,
-            "file_write",
-            "ExecutorAgent",
-            {
-                "path": "tests/test_weather.py",
-                "size_bytes": 1120,
-            },
-        ),
-        # Second verify PASSES
-        evt(
-            42.8,
-            "verify_run",
-            "VerifierAgent",
-            {
-                "command": "python -m pytest tests/test_weather.py -v",
-                "exit_code": 0,
-                "success": True,
-                "duration_s": 1.8,
-                "stdout": "tests/test_weather.py::test_get_current_weather PASSED\n\n1 passed",
-                "stderr": "",
-            },
-        ),
-        evt(
-            44.7,
-            "task_end",
-            "Orchestrator",
-            {
-                "task_id": "2.1",
-                "task_name": "Build weather API client",
-                "success": True,
-                "duration_s": 20.2,
-                "retry_count": 1,
-            },
-        ),
-        evt(
-            45.0,
-            "workflow_end",
-            "Orchestrator",
-            {
-                "success": True,
-                "total_tasks": 3,
-                "completed": 3,
-                "failed": 0,
-                "duration_s": 45.0,
-            },
-        ),
-    ]
-
-
-def _build_task_events(evt: Any) -> list[dict]:
-    """Build demo events for task execution (3 tasks, one with retry)."""
-    return _build_foundation_task_events(evt) + _build_retry_task_events(evt)
-
-
-def _build_demo_events(evt: Any) -> list[dict]:
-    """Build the list of demo trace events for a weather-app project."""
-    return _build_planning_events(evt) + _build_task_events(evt)
-
-
-def _stream_demo_events(
-    events: list[dict],
-    tmp: Path,
-    base: Any,
+@app.command()
+def watch(
+    project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    port: int = typer.Option(0, "--port", help="Server port (0=auto)"),
 ) -> None:
-    """Write demo events to file with delays to simulate a live run."""
-    import json
-    import time as _time
-    from datetime import datetime as dt_cls
-
-    safe_tmp = Path(tmp).resolve()
-    prev_t = 0.0
-    for e in events:
-        offset = 0.0
-        ts_val = e.get("timestamp", "")
-        try:
-            offset = (dt_cls.fromisoformat(ts_val) - base).total_seconds()
-        except (ValueError, TypeError):
-            pass
-        delay = min(max(offset - prev_t, 0.05), 2.0)
-        prev_t = offset
-        _time.sleep(delay)
-        with open(safe_tmp, "a", encoding="utf-8") as f:  # pragma: no skylos
-            f.write(json.dumps(e) + "\n")
+    """Launch mission control to monitor coding agent progress."""
+    try:
+        _do_watch(project_path, port)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from None
 
 
-def _generate_demo_trace() -> Path:
-    import tempfile
-    import threading
-    import uuid
-    from datetime import UTC, datetime, timedelta
+_JUDGE_MODELS: list[tuple[str, str]] = [
+    ("gpt-4o", "OpenAI"),
+    ("gpt-4o-mini", "OpenAI"),
+    ("claude-sonnet-4-20250514", "Anthropic"),
+    ("claude-haiku-4-5-20251001", "Anthropic"),
+    ("gemini/gemini-2.0-flash", "Google"),
+    ("mistral/mistral-large-latest", "Mistral"),
+]
 
-    trace_id = uuid.uuid4().hex[:12]
-    tmp = Path(tempfile.mkdtemp()) / "demo-trace.jsonl"
-    base = datetime.now(UTC)
+_DEFAULT_JUDGE_PROMPT = (
+    "Review each phase for: code correctness, adherence to requirements, "
+    "edge-case handling, security issues, and consistency with the project style."
+)
 
-    def ts(offset_s: float) -> str:
-        return (base + timedelta(seconds=offset_s)).isoformat()
 
-    def evt(
-        t: float, event_type: str, agent: str, data: dict, duration_ms: float | None = None
-    ) -> dict:
-        return {
-            "event_type": event_type,
-            "timestamp": ts(t),
-            "trace_id": trace_id,
-            "span_id": uuid.uuid4().hex[:8],
-            "agent": agent,
-            "data": data,
-            "parent_span_id": None,
-            "duration_ms": duration_ms,
-        }
+def _provider_for_model(model: str) -> str:
+    """Infer provider name from a model string."""
+    if model.startswith("gemini/"):
+        return "google"
+    if model.startswith("mistral/"):
+        return "mistral"
+    if "claude" in model.lower():
+        return "anthropic"
+    if "gpt" in model.lower() or "o1" in model.lower() or "o3" in model.lower():
+        return "openai"
+    return "unknown"
 
-    events = _build_demo_events(evt)
-    tmp.write_text("", encoding="utf-8")
 
-    t = threading.Thread(target=_stream_demo_events, args=(events, tmp, base), daemon=True)
-    t.start()
+def _write_dotenv_key(key: str, value: str, env_path: Path) -> None:
+    """Write or update a single key in a .env file."""
+    lines: list[str] = []
+    found = False
 
-    console.print("[bold cyan]Demo mode[/bold cyan] — streaming sample trace events")
-    return tmp
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                k, _, _ = stripped.partition("=")
+                if k.strip() == key:
+                    lines.append(f"{key}={value}")
+                    found = True
+                    continue
+            lines.append(line)
+
+    if not found:
+        lines.append(f"{key}={value}")
+
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _save_judge_api_key(api_key: str) -> bool:
+    """Save API key to system keyring. Returns False on failure."""
+    try:
+        import keyring
+
+        keyring.set_password("sago", "judge_api_key", api_key)
+        return True
+    except Exception:
+        return False
+
+
+def _do_judge() -> None:
+    console.print(
+        Panel(
+            "Configure a separate LLM to review generated code\nafter each phase.",
+            title="sago judge",
+            border_style="blue",
+        )
+    )
+
+    # --- Model selection ---
+    console.print("\n[bold]Select a judge model:[/bold]\n")
+    for i, (model, provider) in enumerate(_JUDGE_MODELS, 1):
+        console.print(f"  {i}. {model} ({provider})")
+    console.print(f"  {len(_JUDGE_MODELS) + 1}. Custom (enter model string)")
+
+    choice = typer.prompt(
+        "\nChoice",
+        default="1",
+    )
+
+    try:
+        idx = int(choice) - 1
+    except ValueError:
+        console.print("[red]Invalid choice[/red]")
+        raise typer.Exit(1) from None
+
+    if idx == len(_JUDGE_MODELS):
+        model = typer.prompt("Enter model string")
+        provider = _provider_for_model(model)
+    elif 0 <= idx < len(_JUDGE_MODELS):
+        model, provider = _JUDGE_MODELS[idx]
+    else:
+        console.print("[red]Invalid choice[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n  Model: [cyan]{model}[/cyan]")
+    console.print(f"  Provider: [cyan]{provider.lower()}[/cyan]")
+
+    # --- API key ---
+    api_key = typer.prompt(f"\nEnter API key for {provider.lower()}", hide_input=True)
+
+    env_path = Path.cwd() / ".env"
+    _write_dotenv_key("JUDGE_MODEL", model, env_path)
+    console.print("\n  Saved JUDGE_MODEL to .env")
+
+    if _save_judge_api_key(api_key):
+        console.print("  Saved API key to system keyring")
+        key_location = "stored in keyring"
+    else:
+        _write_dotenv_key("JUDGE_API_KEY", api_key, env_path)
+        console.print("  [yellow]Keyring unavailable — saved JUDGE_API_KEY to .env[/yellow]")
+        key_location = "stored in .env"
+
+    # --- Review prompt ---
+    console.print("\n[bold]Review prompt[/bold]")
+    console.print(f"  Default: {_DEFAULT_JUDGE_PROMPT[:80]}...")
+
+    custom_prompt = typer.prompt(
+        "\nCustom review prompt (or Enter for default)",
+        default="",
+    )
+    prompt = custom_prompt if custom_prompt else _DEFAULT_JUDGE_PROMPT
+    prompt_label = "custom" if custom_prompt else "default"
+    _write_dotenv_key("JUDGE_PROMPT", prompt, env_path)
+    console.print(f"\n  Saved {'custom' if custom_prompt else 'default'} JUDGE_PROMPT to .env")
+
+    # --- Summary ---
+    console.print(
+        Panel(
+            f"Judge configured successfully!\n\n"
+            f"  Model:  {model}\n"
+            f"  Key:    {key_location}\n"
+            f"  Prompt: {prompt_label}\n\n"
+            f"The judge will automatically review code after each\n"
+            f"phase during execution by your coding agent.",
+            title="Configuration Complete",
+            border_style="green",
+        )
+    )
+
+
+@app.command()
+def judge() -> None:
+    """Configure the judge LLM for post-phase code reviews."""
+    try:
+        _do_judge()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from None
 
 
 @app.command()

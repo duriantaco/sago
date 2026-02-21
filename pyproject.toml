@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sago"
-version = "0.1.1"
+version = "0.2.0"
 description = "Spec-Aware Generation Orchestrator - turns markdown specs into working code"
 authors = [{name = "oha"}]
 readme = "README.md"
@@ -30,6 +30,7 @@ dependencies = [
     "rich>=13.7.0",
     "python-dotenv>=1.0.0",
     "tenacity>=8.2.0",
+    "keyring>=25.0.0",
 ]
 
 [project.optional-dependencies]
@@ -110,7 +111,7 @@ warn_no_return = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = ["litellm.*", "llmlingua.*"]
+module = ["litellm.*", "llmlingua.*", "keyring.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

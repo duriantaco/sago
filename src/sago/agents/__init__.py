@@ -1,24 +1,21 @@
-"""AI agents for automated development tasks."""
+"""AI agents for project planning."""
 
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.agents.dependencies import CircularDependencyError, DependencyResolver
-from sago.agents.executor import ExecutorAgent
-from sago.agents.orchestrator import Orchestrator, TaskExecution, WorkflowResult
+from sago.agents.orchestrator import Orchestrator, WorkflowResult
 from sago.agents.planner import PlannerAgent
-from sago.agents.self_healing import SelfHealingAgent
-from sago.agents.verifier import VerifierAgent
+from sago.agents.replanner import ReplannerAgent
+from sago.agents.reviewer import ReviewerAgent
 
 __all__ = [
     "BaseAgent",
     "AgentResult",
     "AgentStatus",
     "PlannerAgent",
-    "ExecutorAgent",
-    "VerifierAgent",
-    "SelfHealingAgent",
+    "ReplannerAgent",
+    "ReviewerAgent",
     "DependencyResolver",
     "CircularDependencyError",
     "Orchestrator",
-    "TaskExecution",
     "WorkflowResult",
 ]

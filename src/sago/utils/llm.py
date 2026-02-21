@@ -45,9 +45,11 @@ class LLMClient:
 
     def _build_kwargs(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None,
         max_tokens: int | None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens if max_tokens is not None else self.max_tokens
@@ -59,16 +61,21 @@ class LLMClient:
         }
         if self.api_key:
             kwargs["api_key"] = self.api_key
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice or "auto"
         return kwargs
 
     @_RETRY_DECORATOR
     def chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None = None,
         max_tokens: int | None = None,
         stream: bool = False,
         stream_callback: Callable[[str], None] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         if not self.validate_messages(messages):
             raise LLMError("Invalid messages: each must have 'role' and 'content' keys")
@@ -79,6 +86,8 @@ class LLMClient:
                 max_tokens,
                 stream,
                 stream_callback,
+                tools=tools,
+                tool_choice=tool_choice,
             )
         except (LLMError, LLMRateLimitError):
             raise
@@ -88,11 +97,13 @@ class LLMClient:
     @_RETRY_DECORATOR
     async def achat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None = None,
         max_tokens: int | None = None,
         stream: bool = False,
         stream_callback: Callable[[str], None] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         """Async LLM call using litellm.acompletion (no executor needed)."""
         if not self.validate_messages(messages):
@@ -104,6 +115,8 @@ class LLMClient:
                 max_tokens,
                 stream,
                 stream_callback,
+                tools=tools,
+                tool_choice=tool_choice,
             )
         except (LLMError, LLMRateLimitError):
             raise
@@ -112,15 +125,19 @@ class LLMClient:
 
     def _do_chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None,
         max_tokens: int | None,
         stream: bool,
         stream_callback: Callable[[str], None] | None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         import litellm
 
-        common_kwargs = self._build_kwargs(messages, temperature, max_tokens)
+        common_kwargs = self._build_kwargs(
+            messages, temperature, max_tokens, tools=tools, tool_choice=tool_choice
+        )
 
         logger.info(f"LLM request to {self.model} with {len(messages)} messages")
 
@@ -132,15 +149,19 @@ class LLMClient:
 
     async def _ado_chat_completion(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         temperature: float | None,
         max_tokens: int | None,
         stream: bool,
         stream_callback: Callable[[str], None] | None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         import litellm
 
-        common_kwargs = self._build_kwargs(messages, temperature, max_tokens)
+        common_kwargs = self._build_kwargs(
+            messages, temperature, max_tokens, tools=tools, tool_choice=tool_choice
+        )
 
         logger.info(f"LLM request to {self.model} with {len(messages)} messages")
 
@@ -151,8 +172,9 @@ class LLMClient:
         return self._parse_response(response)
 
     def _parse_response(self, response: Any) -> dict[str, Any]:
-        result = {
-            "content": response.choices[0].message.content,
+        message = response.choices[0].message
+        result: dict[str, Any] = {
+            "content": message.content,
             "model": response.model,
             "usage": {
                 "prompt_tokens": response.usage.prompt_tokens,
@@ -160,7 +182,10 @@ class LLMClient:
                 "total_tokens": response.usage.total_tokens,
             },
             "finish_reason": response.choices[0].finish_reason,
+            "raw_message": message,
         }
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            result["tool_calls"] = message.tool_calls
         logger.info(
             f"LLM response: {result['usage']['total_tokens']} tokens, "
             f"finish_reason={result['finish_reason']}"
@@ -302,16 +327,31 @@ class LLMClient:
         except Exception:
             return len(text) // 4
 
-    def validate_messages(self, messages: list[dict[str, str]]) -> bool:
+    def validate_messages(self, messages: list[dict[str, Any]]) -> bool:
         if not isinstance(messages, list) or len(messages) == 0:
             return False
+
+        _VALID_ROLES = {"system", "user", "assistant", "tool", "function"}
 
         for msg in messages:
             if not isinstance(msg, dict):
                 return False
-            if "role" not in msg or "content" not in msg:
+            if "role" not in msg:
                 return False
-            if msg["role"] not in ["system", "user", "assistant"]:
+            if msg["role"] not in _VALID_ROLES:
+                return False
+            # tool/function messages use tool_call_id instead of content;
+            # assistant messages with tool_calls may have content=None
+            if msg["role"] in ("system", "user") and "content" not in msg:
                 return False
 
         return True
+
+    def supports_function_calling(self) -> bool:
+        """Check if the current model supports function calling / tool use."""
+        try:
+            import litellm
+
+            return litellm.supports_function_calling(model=self.model)  # type: ignore[no-any-return]
+        except Exception:
+            return False
