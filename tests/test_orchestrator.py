@@ -1,13 +1,11 @@
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from sago.agents.base import AgentResult, AgentStatus
-from sago.agents.orchestrator import Orchestrator, TaskExecution, WorkflowResult
+from sago.agents.orchestrator import Orchestrator, WorkflowResult
 from sago.core.config import Config
-from sago.core.parser import Task
 
 
 @pytest.fixture
@@ -53,74 +51,8 @@ def orchestrator(mock_config: Config) -> Orchestrator:
 def test_orchestrator_initialization(orchestrator: Orchestrator):
     assert orchestrator is not None
     assert orchestrator.planner is not None
-    assert orchestrator.executor is not None
-    assert orchestrator.verifier is not None
-    assert orchestrator.dependency_resolver is not None
-
-
-def test_task_execution_success():
-    task = Task(
-        id="1.1",
-        name="Test task",
-        phase_name="Phase 1",
-        files=["test.py"],
-        action="Test action",
-        verify="python test.py",
-        done="Task complete",
-    )
-
-    exec_result = AgentResult(
-        status=AgentStatus.SUCCESS,
-        output="Task executed",
-        metadata={},
-        error=None,
-    )
-
-    verify_result = AgentResult(
-        status=AgentStatus.SUCCESS,
-        output="Task verified",
-        metadata={},
-        error=None,
-    )
-
-    task_exec = TaskExecution(
-        task=task,
-        execution_result=exec_result,
-        verification_result=verify_result,
-        start_time=datetime.now(),
-        end_time=datetime.now(),
-    )
-
-    assert task_exec.success
-    assert task_exec.duration >= 0
-
-
-def test_task_execution_failure():
-    task = Task(
-        id="1.1",
-        name="Test task",
-        phase_name="Phase 1",
-        files=["test.py"],
-        action="Test action",
-        verify="python test.py",
-        done="Task complete",
-    )
-
-    exec_result = AgentResult(
-        status=AgentStatus.FAILURE,
-        output="",
-        metadata={},
-        error="Execution failed",
-    )
-
-    task_exec = TaskExecution(
-        task=task,
-        execution_result=exec_result,
-        start_time=datetime.now(),
-        end_time=datetime.now(),
-    )
-
-    assert not task_exec.success
+    assert orchestrator.parser is not None
+    assert orchestrator.project_manager is not None
 
 
 def test_workflow_result_to_dict():
@@ -149,7 +81,6 @@ async def test_run_workflow_no_plan(orchestrator: Orchestrator, tmp_path: Path):
     result = await orchestrator.run_workflow(
         project_path=tmp_path,
         plan=False,
-        execute=True,
     )
 
     assert not result.success
@@ -167,7 +98,6 @@ async def test_run_workflow_with_plan_generation(
     )
 
     with patch.object(orchestrator.planner, "execute", new_callable=AsyncMock) as mock_planner:
-        mock_planner.return_value = mock_result
 
         def create_plan(*args, **kwargs):
             (tmp_path / "PLAN.md").write_text(sample_plan_content)
@@ -175,284 +105,103 @@ async def test_run_workflow_with_plan_generation(
 
         mock_planner.side_effect = create_plan
 
-        with (
-            patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
-            patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
-        ):
-            mock_executor.return_value = AgentResult(
-                status=AgentStatus.SUCCESS, output="Executed", metadata={}
-            )
-            mock_verifier.return_value = AgentResult(
-                status=AgentStatus.SUCCESS, output="Verified", metadata={}
-            )
+        result = await orchestrator.run_workflow(
+            project_path=tmp_path,
+            plan=True,
+        )
 
-            result = await orchestrator.run_workflow(
-                project_path=tmp_path,
-                plan=True,
-                execute=True,
-                verify=True,
-            )
-
-            assert result.success
-            assert mock_planner.called
+        assert result.success
+        assert result.total_tasks == 2
+        assert mock_planner.called
 
 
 @pytest.mark.asyncio
 async def test_run_workflow_plan_exists(
     orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
 ):
+    """Test workflow succeeds when PLAN.md already exists and plan=False."""
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    with (
-        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
-        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
-    ):
-        mock_executor.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Executed", metadata={}
-        )
-        mock_verifier.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Verified", metadata={}
-        )
+    result = await orchestrator.run_workflow(
+        project_path=tmp_path,
+        plan=False,
+    )
 
-        result = await orchestrator.run_workflow(
-            project_path=tmp_path,
-            plan=False,
-            execute=True,
-            verify=True,
-        )
-
-        assert result.success
-        assert result.total_tasks == 2
-        assert result.completed_tasks == 2
+    assert result.success
+    assert result.total_tasks == 2
 
 
 @pytest.mark.asyncio
-async def test_execute_single_task_with_retry(orchestrator: Orchestrator):
-    task = Task(
-        id="1.1",
-        name="Test task",
-        phase_name="Phase 1",
-        files=["test.py"],
-        action="Test action",
-        verify="python test.py",
-        done="Task complete",
-    )
-
-    fail_result = AgentResult(
-        status=AgentStatus.FAILURE, output="", error="First attempt failed", metadata={}
-    )
-
-    success_result = AgentResult(
-        status=AgentStatus.SUCCESS, output="Success", error=None, metadata={}
-    )
-
-    with (
-        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
-        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
-    ):
-        mock_executor.side_effect = [fail_result, success_result]
-        mock_verifier.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Verified", metadata={}
-        )
-
-        task_exec = await orchestrator._execute_single_task(
-            task, Path("."), verify=True, max_retries=2
-        )
-
-        assert task_exec.success
-        assert task_exec.retry_count == 1
-        assert mock_executor.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_execute_single_task_max_retries_exceeded(orchestrator: Orchestrator):
-    task = Task(
-        id="1.1",
-        name="Test task",
-        phase_name="Phase 1",
-        files=["test.py"],
-        action="Test action",
-        verify="python test.py",
-        done="Task complete",
-    )
-
-    fail_result = AgentResult(
-        status=AgentStatus.FAILURE, output="", error="Task failed", metadata={}
-    )
-
-    with patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor:
-        mock_executor.return_value = fail_result
-
-        task_exec = await orchestrator._execute_single_task(
-            task, Path("."), verify=False, max_retries=2
-        )
-
-        assert not task_exec.success
-        assert task_exec.retry_count == 2
-        assert mock_executor.call_count == 3
-
-
-@pytest.mark.asyncio
-async def test_execute_wave_parallel(orchestrator: Orchestrator):
-    tasks = [
-        Task(
-            id="1.1",
-            name="Task A",
-            phase_name="Phase 1",
-            files=["a.py"],
-            action="Create A",
-            verify="python -c 'import a'",
-            done="A exists",
-        ),
-        Task(
-            id="1.2",
-            name="Task B",
-            phase_name="Phase 1",
-            files=["b.py"],
-            action="Create B",
-            verify="python -c 'import b'",
-            done="B exists",
-        ),
-    ]
-
-    with (
-        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
-        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
-    ):
-        mock_executor.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Executed", metadata={}
-        )
-        mock_verifier.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Verified", metadata={}
-        )
-
-        results = await orchestrator._execute_wave(tasks, Path("."), verify=True, max_retries=1)
-
-        assert len(results) == 2
-        assert all(r.success for r in results)
-
-
-@pytest.mark.asyncio
-async def test_update_state(orchestrator: Orchestrator, tmp_path: Path):
-    task = Task(
-        id="1.1",
-        name="Test task",
-        phase_name="Phase 1",
-        files=["test.py"],
-        action="Test action",
-        verify="python test.py",
-        done="Task complete",
-    )
-
-    await orchestrator._update_state(tmp_path, task, success=True)
-
-    state_path = tmp_path / "STATE.md"
-    assert state_path.exists()
-
-    content = state_path.read_text()
-    assert "1.1" in content
-    assert "Test task" in content
-    assert "✓" in content
-
-
-@pytest.mark.asyncio
-async def test_update_state_with_error(orchestrator: Orchestrator, tmp_path: Path):
-    task = Task(
-        id="1.1",
-        name="Test task",
-        phase_name="Phase 1",
-        files=["test.py"],
-        action="Test action",
-        verify="python test.py",
-        done="Task complete",
-    )
-
-    await orchestrator._update_state(tmp_path, task, success=False, error="Task failed")
-
-    state_path = tmp_path / "STATE.md"
-    content = state_path.read_text()
-
-    assert "✗" in content
-    assert "Task failed" in content
-
-
-@pytest.mark.asyncio
-async def test_workflow_continue_on_failure(
-    orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
+async def test_run_workflow_plan_generation_failure(
+    orchestrator: Orchestrator, tmp_path: Path
 ):
-    (tmp_path / "PLAN.md").write_text(sample_plan_content)
+    """Test workflow fails when plan generation fails."""
+    mock_result = AgentResult(
+        status=AgentStatus.FAILURE,
+        output="",
+        metadata={},
+        error="LLM call failed",
+    )
 
-    with (
-        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
-        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
-    ):
-        mock_executor.side_effect = [
-            AgentResult(status=AgentStatus.FAILURE, output="", error="Failed", metadata={}),
-            AgentResult(status=AgentStatus.SUCCESS, output="Success", metadata={}),
-        ]
-
-        mock_verifier.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Verified", metadata={}
-        )
+    with patch.object(orchestrator.planner, "execute", new_callable=AsyncMock) as mock_planner:
+        mock_planner.return_value = mock_result
 
         result = await orchestrator.run_workflow(
             project_path=tmp_path,
-            plan=False,
-            execute=True,
-            verify=True,
-            continue_on_failure=True,
+            plan=True,
         )
 
         assert not result.success
-        assert result.failed_tasks == 1
-        assert result.completed_tasks == 1
+        assert "Plan generation failed" in result.error
 
 
 @pytest.mark.asyncio
-async def test_workflow_stop_on_failure(
-    orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
+async def test_run_workflow_template_plan_rejected(
+    orchestrator: Orchestrator, tmp_path: Path
 ):
-    """Test workflow stops on first failure."""
-    (tmp_path / "PLAN.md").write_text(sample_plan_content)
+    """Test that template PLAN.md is rejected when plan=False."""
+    (tmp_path / "PLAN.md").write_text(
+        "# PLAN.md\n\nRun `sago plan` to generate this file\n"
+    )
 
-    with patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor:
-        mock_executor.return_value = AgentResult(
-            status=AgentStatus.FAILURE, output="", error="Failed", metadata={}
-        )
+    result = await orchestrator.run_workflow(
+        project_path=tmp_path,
+        plan=False,
+    )
 
-        result = await orchestrator.run_workflow(
-            project_path=tmp_path,
-            plan=False,
-            execute=True,
-            verify=False,
-            continue_on_failure=False,
-        )
-
-        assert not result.success
-        assert result.failed_tasks >= 1
-        assert result.skipped_tasks >= 0
+    assert not result.success
+    assert "template" in result.error
 
 
 @pytest.mark.asyncio
-async def test_workflow_without_verification(
+async def test_run_workflow_empty_plan(
+    orchestrator: Orchestrator, tmp_path: Path
+):
+    """Test workflow fails when PLAN.md has no tasks."""
+    (tmp_path / "PLAN.md").write_text("# PLAN.md\n\nNo tasks here.\n")
+
+    result = await orchestrator.run_workflow(
+        project_path=tmp_path,
+        plan=False,
+    )
+
+    assert not result.success
+    assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_run_workflow_ignores_extra_kwargs(
     orchestrator: Orchestrator, tmp_path: Path, sample_plan_content: str
 ):
+    """Test that extra kwargs (from old API) are silently ignored."""
     (tmp_path / "PLAN.md").write_text(sample_plan_content)
 
-    with (
-        patch.object(orchestrator.executor, "execute", new_callable=AsyncMock) as mock_executor,
-        patch.object(orchestrator.verifier, "execute", new_callable=AsyncMock) as mock_verifier,
-    ):
-        mock_executor.return_value = AgentResult(
-            status=AgentStatus.SUCCESS, output="Executed", metadata={}
-        )
+    result = await orchestrator.run_workflow(
+        project_path=tmp_path,
+        plan=False,
+        execute=True,
+        verify=True,
+        continue_on_failure=True,
+    )
 
-        result = await orchestrator.run_workflow(
-            project_path=tmp_path,
-            plan=False,
-            execute=True,
-            verify=False,
-        )
-
-        assert result.success
-        assert not mock_verifier.called  # Verifier should not be called
+    assert result.success

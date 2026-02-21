@@ -222,6 +222,87 @@ def test_task_to_dict() -> None:
     assert task_dict["phase_name"] == "Phase 1"
 
 
+def test_parse_dependencies(parser: MarkdownParser) -> None:
+    """Test parsing dependencies from PLAN.md XML."""
+    content = """
+# PLAN.md
+
+```xml
+<phases>
+    <dependencies>
+        <package>flask>=2.0</package>
+        <package>requests>=2.28</package>
+        <package>pydantic>=2.0</package>
+    </dependencies>
+
+    <phase name="Phase 1: Foundation">
+        <description>Set up project</description>
+        <task id="1.1">
+            <name>Setup</name>
+            <files>setup.py</files>
+            <action>Create setup</action>
+            <verify>python -c "print('ok')"</verify>
+            <done>Done</done>
+        </task>
+    </phase>
+</phases>
+```
+"""
+    deps = parser.parse_dependencies(content)
+    assert deps == ["flask>=2.0", "requests>=2.28", "pydantic>=2.0"]
+
+
+def test_parse_dependencies_no_deps(parser: MarkdownParser) -> None:
+    """Test that missing <dependencies> returns empty list."""
+    content = """
+```xml
+<phases>
+    <phase name="Phase 1">
+        <description>Desc</description>
+        <task id="1.1">
+            <name>Task</name>
+            <files>f.py</files>
+            <action>Do something</action>
+            <verify>true</verify>
+            <done>Done</done>
+        </task>
+    </phase>
+</phases>
+```
+"""
+    deps = parser.parse_dependencies(content)
+    assert deps == []
+
+
+def test_parse_dependencies_empty_deps(parser: MarkdownParser) -> None:
+    """Test that empty <dependencies> returns empty list."""
+    content = """
+```xml
+<phases>
+    <dependencies></dependencies>
+    <phase name="Phase 1">
+        <description>Desc</description>
+        <task id="1.1">
+            <name>Task</name>
+            <files>f.py</files>
+            <action>Do something</action>
+            <verify>true</verify>
+            <done>Done</done>
+        </task>
+    </phase>
+</phases>
+```
+"""
+    deps = parser.parse_dependencies(content)
+    assert deps == []
+
+
+def test_parse_dependencies_no_xml(parser: MarkdownParser) -> None:
+    """Test that non-XML content returns empty list."""
+    deps = parser.parse_dependencies("# No XML here")
+    assert deps == []
+
+
 def test_phase_to_dict() -> None:
     """Test converting Phase to dictionary."""
     task = Task(id="1", name="Task", files=[], action="", verify="", done="", phase_name="")
