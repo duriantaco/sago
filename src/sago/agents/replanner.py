@@ -20,7 +20,7 @@ class ReplannerAgent(BaseAgent):
 You are UPDATING an existing project plan, not creating one from scratch.
 
 Rules for modifying the plan:
-- Tasks marked DONE must be preserved exactly — same id, name, action, verify, done
+- Tasks marked DONE must be preserved exactly — same id, name, action, verify, done, depends_on
 - Tasks marked FAILED can be modified or replaced
 - PENDING tasks can be modified, reordered, added, or removed
 - Keep task IDs stable where possible for STATE.md continuity
@@ -63,9 +63,8 @@ Rules for modifying the plan:
         phases = self.parser.parse_xml_tasks(plan_content)
         state_summary = self._build_state_summary(project_path, phases)
 
-        project_context = self._load_project_context(project_path)
+        project_context = self._load_project_context(project_path, skip_repo_map=bool(extra_repo_map))
 
-        # Use repo_map passed from CLI if available, otherwise use the one from context loading
         if extra_repo_map:
             project_context["REPO_MAP"] = extra_repo_map
 
@@ -122,9 +121,22 @@ Rules for modifying the plan:
         pending = sum(1 for ts in task_states if ts["status"] == "pending")
         summary_header = f"Task states: {done} done, {failed} failed, {pending} pending\n"
 
-        return summary_header + "\n".join(lines)
+        result = summary_header + "\n".join(lines)
 
-    def _load_project_context(self, project_path: Path) -> dict[str, str]:
+        resume_point = self.parser.parse_resume_point(state_content)
+        if resume_point is not None:
+            result += "\n\nResume context:"
+            result += f"\n  Last completed: {resume_point.last_completed}"
+            result += f"\n  Next task: {resume_point.next_task}"
+            if resume_point.failure_reason != "None":
+                result += f"\n  Failure reason: {resume_point.failure_reason}"
+            result += f"\n  Checkpoint: {resume_point.checkpoint}"
+
+        return result
+
+    def _load_project_context(
+        self, project_path: Path, skip_repo_map: bool = False
+    ) -> dict[str, str]:
         """Load project context files (PROJECT.md, REQUIREMENTS.md) and repo map."""
         context: dict[str, str] = {}
         for filename in ["PROJECT.md", "REQUIREMENTS.md"]:
@@ -144,12 +156,13 @@ Rules for modifying the plan:
                 except Exception as e:
                     self.logger.warning(f"Could not load {filename}: {e}")
 
-        from sago.utils.repo_map import generate_repo_map
+        if not skip_repo_map:
+            from sago.utils.repo_map import generate_repo_map
 
-        repo_map = generate_repo_map(project_path)
-        if repo_map:
-            context["REPO_MAP"] = repo_map
-            self.logger.debug(f"Generated repo map: {len(repo_map)} chars")
+            repo_map = generate_repo_map(project_path)
+            if repo_map:
+                context["REPO_MAP"] = repo_map
+                self.logger.debug(f"Generated repo map: {len(repo_map)} chars")
 
         return context
 
@@ -199,7 +212,7 @@ Project Context:
 
 CRITICAL REQUIREMENTS:
 1. Output the COMPLETE updated <phases> XML block
-2. Preserve all DONE tasks exactly as they are (same id, name, action, verify, done)
+2. Preserve all DONE tasks exactly as they are (same id, name, action, verify, done, depends_on)
 3. FAILED tasks can be modified or replaced
 4. PENDING tasks can be modified, reordered, added, or removed
 5. Use XML format with <phases>, <phase>, and <task> tags
@@ -264,8 +277,11 @@ The `<phases>` block contains:
 - **`<dependencies>`** (optional): Lists third-party packages needed by the project. Each package is a `<package>` element with optional version constraints (e.g. `flask>=2.0`).
 - **`<review>`** (optional): Instructions for post-phase code review. If present, a review runs automatically after each phase completes and feedback carries forward to the next phase.
 
-Each `<task>` must contain:
+Each `<task>` has attributes:
 - **id:** Unique identifier (phase.task format)
+- **depends_on:** (optional) Comma-separated task IDs this task depends on. Omit to depend on all prior tasks in the phase.
+
+Each `<task>` must contain child elements:
 - **name:** Clear, actionable task name
 - **files:** Specific files to create/modify
 - **action:** Detailed implementation instructions
@@ -274,7 +290,7 @@ Each `<task>` must contain:
 
 ## Execution Rules
 
-1. **Sequential within phases** - Complete tasks in order within each phase
+1. **Follow task dependencies** - Check `depends_on` to determine task order. Tasks without `depends_on` depend on all prior tasks in their phase.
 2. **Parallel between phases** - Independent phases can run concurrently
 3. **Verify before proceeding** - Each task must pass verification
 4. **Update STATE.md** - Log progress after each task

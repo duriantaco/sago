@@ -27,8 +27,16 @@ Each task in `PLAN.md` looks like this:
   <verify>command that exits 0 on success</verify>
   <done>What "done" looks like</done>
 </task>
+<task id="1.2" depends_on="1.1">
+  <name>Depends on 1.1</name>
+  <files>files/to/create.py</files>
+  <action>Detailed instructions</action>
+  <verify>command that exits 0 on success</verify>
+  <done>What "done" looks like</done>
+</task>
 ```
 
+- **depends_on** — (optional) comma-separated task IDs this task depends on. If omitted, the task depends on all prior tasks in its phase.
 - **files** — only touch these files for this task
 - **action** — follow these instructions precisely
 - **verify** — run this command after implementation; it must exit 0
@@ -56,10 +64,40 @@ If a task fails:
 
 Then run `sago replan` before starting the next phase. This reviews completed work and provides context for the remaining phases.
 
+### Maintaining the Resume Point
+
+After each task, update the `## Resume Point` section in STATE.md so you can resume efficiently if interrupted.
+
+**After a successful task:**
+
+```markdown
+## Resume Point
+
+* **Last Completed:** 1.2: Add Configuration
+* **Next Task:** 2.1: Build CLI
+* **Next Action:** Create Typer CLI application
+* **Failure Reason:** None
+* **Checkpoint:** sago-checkpoint-1.2
+```
+
+**After a failed verification:**
+
+```markdown
+## Resume Point
+
+* **Last Completed:** 1.1: Initialize Project
+* **Next Task:** 1.2: Add Configuration (retry)
+* **Next Action:** Fix config loading for nested keys
+* **Failure Reason:** pytest tests/test_config.py exited 1 — KeyError on nested.key
+* **Checkpoint:** sago-checkpoint-1.1
+```
+
+After each successful task, create a git tag: `git tag sago-checkpoint-{task_id}` (e.g., `git tag sago-checkpoint-1.2`). This gives you a rollback point if a later task breaks something.
+
 ## Rules
 
 - Follow the plan. Do not add features, refactor code, or make improvements beyond what each task specifies.
-- Complete tasks sequentially within each phase.
+- Follow task dependencies — check `depends_on` to determine task order. Tasks without `depends_on` depend on all prior tasks in their phase.
 - If a `<dependencies>` block exists in PLAN.md, install those packages before starting Phase 1.
 - Every task must pass its verify command before you move on.
 - If you're stuck on a task, document the blocker in STATE.md and move to the next task.

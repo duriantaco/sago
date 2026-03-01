@@ -1,6 +1,6 @@
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ class Task:
     verify: str
     done: str
     phase_name: str = ""
+    depends_on: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -24,6 +25,7 @@ class Task:
             "verify": self.verify,
             "done": self.done,
             "phase_name": self.phase_name,
+            "depends_on": self.depends_on,
         }
 
 
@@ -74,6 +76,24 @@ class Milestone:
         }
 
 
+@dataclass
+class ResumePoint:
+    last_completed: str
+    next_task: str
+    next_action: str
+    failure_reason: str
+    checkpoint: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "last_completed": self.last_completed,
+            "next_task": self.next_task,
+            "next_action": self.next_action,
+            "failure_reason": self.failure_reason,
+            "checkpoint": self.checkpoint,
+        }
+
+
 class MarkdownParser:
     def parse_xml_tasks(self, content: str) -> list[Phase]:
         xml_pattern = r"```xml\s*(.*?)\s*```"
@@ -106,6 +126,8 @@ class MarkdownParser:
             tasks = []
             for task_elem in phase_elem.findall("task"):
                 task_id = task_elem.get("id", "")
+                depends_on_raw = task_elem.get("depends_on", "")
+                depends_on = [d.strip() for d in depends_on_raw.split(",") if d.strip()]
 
                 name_elem = task_elem.find("name")
                 files_elem = task_elem.find("files")
@@ -125,6 +147,7 @@ class MarkdownParser:
                     verify=(verify_elem.text or "").strip() if verify_elem is not None else "",
                     done=(done_elem.text or "").strip() if done_elem is not None else "",
                     phase_name=phase_name,
+                    depends_on=depends_on,
                 )
                 tasks.append(task)
 
@@ -212,6 +235,35 @@ class MarkdownParser:
 
         return milestones
 
+    def parse_resume_point(self, content: str) -> ResumePoint | None:
+        """Parse the Resume Point section from STATE.md.
+
+        Returns None if the section is missing or all fields are "None".
+        """
+        match = re.search(
+            r"## Resume Point\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL
+        )
+        if not match:
+            return None
+
+        section = match.group(1)
+        fields: dict[str, str] = {}
+        for label in ("Last Completed", "Next Task", "Next Action",
+                       "Failure Reason", "Checkpoint"):
+            m = re.search(rf"\*\s*\*\*{re.escape(label)}:\*\*\s*(.*)", section)
+            fields[label] = m.group(1).strip() if m else "None"
+
+        if all(v == "None" for v in fields.values()):
+            return None
+
+        return ResumePoint(
+            last_completed=fields["Last Completed"],
+            next_task=fields["Next Task"],
+            next_action=fields["Next Action"],
+            failure_reason=fields["Failure Reason"],
+            checkpoint=fields["Checkpoint"],
+        )
+
     def parse_state(self, content: str) -> dict[str, Any]:
         """Parse current state from STATE.md.
 
@@ -249,6 +301,8 @@ class MarkdownParser:
                     state["current_task"] = line.split("Current Task:**", 1)[-1].strip()
             elif current_section in ("decisions", "blockers") and line.startswith("*"):
                 state[current_section].append(line[1:].strip())
+
+        state["resume_point"] = self.parse_resume_point(content)
 
         return state
 

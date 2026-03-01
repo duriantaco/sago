@@ -10,7 +10,7 @@ from rich.table import Table
 
 from sago.agents.orchestrator import Orchestrator
 from sago.core.config import Config, find_dotenv
-from sago.core.parser import MarkdownParser
+from sago.core.parser import MarkdownParser, Phase
 from sago.core.project import ProjectManager
 
 app = typer.Typer(
@@ -28,7 +28,7 @@ def _load_config(project_path: Path | None = None) -> Config:
     global config
     if project_path is not None:
         env_file = find_dotenv(project_path) or ".env"
-        config = Config(_env_file=env_file)
+        config = Config(_env_file=env_file)  # type: ignore[call-arg]
     return config
 
 # Provider-specific env vars that litellm checks automatically
@@ -204,10 +204,10 @@ def _get_completed_task_ids(state_file: Path) -> list[str]:
     import re
 
     content = state_file.read_text(encoding="utf-8")
-    return re.findall(r"\[(?:✓|✗)\]\s+(\d+\.\d+):", content)
+    return re.findall(r"\[✓\]\s+(\d+\.\d+):", content)
 
 
-def _show_task_progress(phases: list, completed_tasks: list[str], detailed: bool) -> None:
+def _show_task_progress(phases: list[Phase], completed_tasks: list[str], detailed: bool) -> None:
     """Display task progress summary and optional per-phase breakdown."""
     completed_set = set(completed_tasks)
     total_tasks = sum(len(phase.tasks) for phase in phases)
@@ -286,6 +286,17 @@ def _do_status(project_path: Path, detailed: bool) -> None:
     table.add_row("[cyan]Current Task[/cyan]", state.get("current_task", "Unknown"))
     table.add_row("[cyan]Path[/cyan]", str(info["path"]))
     console.print(table)
+
+    resume_point = state.get("resume_point")
+    if resume_point is not None:
+        rp_table = Table(title="Resume Point", show_header=False)
+        rp_table.add_row("[green]Last Completed[/green]", resume_point.last_completed)
+        rp_table.add_row("[yellow]Next Task[/yellow]", resume_point.next_task)
+        rp_table.add_row("[yellow]Next Action[/yellow]", resume_point.next_action)
+        if resume_point.failure_reason != "None":
+            rp_table.add_row("[red]Failure Reason[/red]", resume_point.failure_reason)
+        rp_table.add_row("[cyan]Checkpoint[/cyan]", resume_point.checkpoint)
+        console.print(rp_table)
 
     plan_file = project_path / "PLAN.md"
     if plan_file.exists():
@@ -394,7 +405,7 @@ def plan(
 
 
 def _get_phase_status(
-    phases: list, task_states: list[dict[str, str]]
+    phases: list[Phase], task_states: list[dict[str, str]]
 ) -> list[dict[str, Any]]:
     """Group task states by phase, returning per-phase status.
 
@@ -437,7 +448,7 @@ def _write_phase_summary_to_state(
 
 
 def _show_plan_diff(
-    old_phases: list, new_phases: list
+    old_phases: list[Phase], new_phases: list[Phase]
 ) -> None:
     """Show added/modified/removed tasks between old and new plan."""
     old_task_ids = {t.id for p in old_phases for t in p.tasks}
@@ -452,7 +463,8 @@ def _show_plan_diff(
         old_t = old_tasks_by_id[tid]
         new_t = new_tasks_by_id[tid]
         if (old_t.name != new_t.name or old_t.action != new_t.action
-                or old_t.files != new_t.files or old_t.verify != new_t.verify):
+                or old_t.files != new_t.files or old_t.verify != new_t.verify
+                or old_t.depends_on != new_t.depends_on):
             modified.add(tid)
 
     console.print(
@@ -473,7 +485,11 @@ def _show_plan_diff(
             console.print(f"  [red]- {tid}: {old_tasks_by_id[tid].name}[/red]")
 
 
-def _do_replan(project_path: Path) -> None:
+def _do_replan(
+    project_path: Path,
+    feedback: str | None = None,
+    auto_apply: bool = False,
+) -> None:
     _load_config(project_path)
     _check_llm_configured()
 
@@ -577,11 +593,12 @@ def _do_replan(project_path: Path) -> None:
                 f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]"
             )
 
-    # Prompt for feedback
-    feedback = typer.prompt(
-        "\nWhat do you want to change? (Enter to skip)",
-        default="",
-    )
+    # Prompt for feedback (skip if provided via --feedback)
+    if feedback is None:
+        feedback = typer.prompt(
+            "\nWhat do you want to change? (Enter to skip)",
+            default="",
+        )
 
     if not feedback:
         if review_outputs:
@@ -624,7 +641,7 @@ def _do_replan(project_path: Path) -> None:
 
     _show_plan_diff(old_phases, new_phases)
 
-    if not typer.confirm("\nApply changes?"):
+    if not auto_apply and not typer.confirm("\nApply changes?"):
         plan_file.write_text(old_plan_backup, encoding="utf-8")
         console.print("[dim]Changes reverted.[/dim]")
         raise typer.Exit(0)
@@ -636,10 +653,14 @@ def _do_replan(project_path: Path) -> None:
 @app.command()
 def replan(
     project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    feedback: str | None = typer.Option(
+        None, "--feedback", "-f", help="Feedback to apply (skips interactive prompt)"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-apply changes without confirmation"),
 ) -> None:
     """Update PLAN.md based on your feedback without regenerating from scratch."""
     try:
-        _do_replan(project_path)
+        _do_replan(project_path, feedback=feedback, auto_apply=yes)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from None

@@ -157,6 +157,9 @@ CRITICAL REQUIREMENTS:
 6. Each phase should group related tasks
 7. Action must be detailed enough for execution
 8. Do NOT use special XML characters (&, <, >) in text content — spell out "and" instead of &
+11. Use depends_on="id1,id2" attribute on <task> to declare dependencies on other tasks. \
+Omit depends_on when a task depends on all prior tasks in its phase (the default). \
+Use it when a task has NO dependencies, or depends on specific tasks only.
 9. Include a <dependencies> block inside <phases> (before <review>) listing all third-party \
 packages. Use <package> tags with version constraints:
      <dependencies>
@@ -215,6 +218,14 @@ Example Structure:
                 python -c "import sys; sys.path.insert(0, 'src'); import myproject; print('OK')"
             </verify>
             <done>Project imports successfully without errors</done>
+        </task>
+
+        <task id="1.2" depends_on="1.1">
+            <name>Add Configuration</name>
+            <files>src/config.py</files>
+            <action>Create configuration module that reads from environment</action>
+            <verify>python -c "from config import Config; print('OK')"</verify>
+            <done>Config module loads correctly</done>
         </task>
     </phase>
 </phases>
@@ -277,8 +288,11 @@ The `<phases>` block contains:
 - **`<dependencies>`** (optional): Lists third-party packages needed by the project. Each package is a `<package>` element with optional version constraints (e.g. `flask>=2.0`).
 - **`<review>`** (optional): Instructions for post-phase code review. If present, a review runs automatically after each phase completes and feedback carries forward to the next phase.
 
-Each `<task>` must contain:
+Each `<task>` has attributes:
 - **id:** Unique identifier (phase.task format)
+- **depends_on:** (optional) Comma-separated task IDs this task depends on. Omit to depend on all prior tasks in the phase.
+
+Each `<task>` must contain child elements:
 - **name:** Clear, actionable task name
 - **files:** Specific files to create/modify
 - **action:** Detailed implementation instructions
@@ -287,7 +301,7 @@ Each `<task>` must contain:
 
 ## Execution Rules
 
-1. **Sequential within phases** - Complete tasks in order within each phase
+1. **Follow task dependencies** - Check `depends_on` to determine task order. Tasks without `depends_on` depend on all prior tasks in their phase.
 2. **Parallel between phases** - Independent phases can run concurrently
 3. **Verify before proceeding** - Each task must pass verification
 4. **Update STATE.md** - Log progress after each task
