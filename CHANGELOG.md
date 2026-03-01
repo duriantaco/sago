@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.1] - 2026-03-01
+
+### Added
+- **`depends_on` task dependencies** — tasks now support an optional `depends_on="id1,id2"` XML attribute for declaring explicit dependencies between tasks, enabling DAG-based plans where independent tasks within a phase can run in parallel. Omitting `depends_on` preserves the current sequential-by-default behavior. Parsed into `Task.depends_on: list[str]`, shown in replan diffs, and documented in planner/replanner LLM prompts and the CLAUDE.md coding agent template.
+- **Resume Point in STATE.md** — new `## Resume Point` section tracks last completed task, next task, failure reason, and git checkpoint tag so coding agents can resume without re-reading the full plan
+- **`ResumePoint` dataclass + parser** — `parse_resume_point()` on `MarkdownParser`; `parse_state()` now includes `resume_point` key
+- **Resume point in `sago status`** — color-coded table (green/yellow/red/cyan) shown when a resume point exists
+- **Resume context in replanner** — `_build_state_summary()` appends resume point details so the LLM has retry context when replanning
+- **CLAUDE.md template updated** — instructs coding agents to maintain the resume point and create `sago-checkpoint-{task_id}` git tags
+- **Non-interactive replan** — `sago replan -f "feedback text" -y` passes feedback and auto-applies changes without prompts, enabling scripted and agent-driven replanning
+- **LLM token threshold warnings** — `LLMClient` now estimates input token count before each call and logs a warning when it exceeds `warn_token_threshold` (default 50k tokens)
+- **LLM usage logging** — prompt, completion, and total token counts logged after every LLM call; `BaseAgent._call_llm()` includes the breakdown in its response log
+- **PLAN.md template expanded** — XML schema now includes `<dependencies>` block for package dependencies with version constraints and `<review>` block with post-phase code review instructions
+- **Shared test fixtures** — new `tests/conftest.py` with `SAMPLE_XML`, `SAMPLE_PLAN`, `SAMPLE_STATE` constants and `sago_project` / `sago_project_with_plan` fixtures for temp project directories
+- **CLI unit tests** — new `tests/test_cli.py` covering `version`, `init`, `plan`, `status`, and `replan` commands using Typer's `CliRunner`
+- **Integration tests** — new `tests/test_integration.py` with end-to-end workflows (init → plan → status, replan one-shot) using mocked LLM responses
+
+### Changed
+- **CLAUDE.md (sago repo)** — rewritten to reflect planning-first identity; removed executor, verifier, self-healing, and parallel execution references; added "Planning is the product" as a key design pattern
+
+### Removed
+- **`DependencyResolver`** — topological-sort wave scheduler removed from `agents/dependencies.py`; unnecessary now that external coding agents execute tasks sequentially from PLAN.md
+- **`CostEstimator`** — per-model token pricing and workflow cost estimation removed from `utils/cost_estimator.py`; execution costs are the external agent's concern, not sago's
+- **Tests for removed modules** — `tests/test_dependencies.py` (12 tests) and `tests/test_cost_estimator.py` (14 tests) deleted
+
 ## [0.2.0] - 2026-02-21
 
 ### Added

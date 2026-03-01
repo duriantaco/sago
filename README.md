@@ -95,7 +95,7 @@ sago plan
 Sago reads your `PROJECT.md` and `REQUIREMENTS.md`, detects your environment (Python version, OS, platform), and generates a `PLAN.md` with:
 
 - Atomic tasks grouped into phases
-- Dependency ordering
+- Task-level dependency ordering via `depends_on`
 - Verification commands for each task
 - A list of third-party packages needed
 
@@ -155,7 +155,7 @@ sago status -d           # detailed per-task breakdown
 │  2. PLAN (sago)                                     │
 │     Sago calls an LLM to generate PLAN.md:          │
 │     - Atomic tasks with verification commands       │
-│     - Dependency-ordered phases                     │
+│     - Task-level dependencies (depends_on DAG)      │
 │     - Environment-aware (Python version, OS)        │
 │     - Lists required third-party packages           │
 └──────────────────────┬──────────────────────────────┘
@@ -262,7 +262,7 @@ Sago's output is just markdown files. Any coding agent that can read files and r
 2. Read `PROJECT.md` — the project vision, tech stack, and architecture
 3. Read `REQUIREMENTS.md` — what the project must do
 4. If `PLAN.md` has a `<dependencies>` block, install those packages first
-5. Execute tasks in order within each phase
+5. Follow task dependencies — check `depends_on` attributes to determine task order (tasks without `depends_on` depend on all prior tasks in their phase)
 6. Run each task's `<verify>` command — it must exit 0 before moving on
 7. Update `STATE.md` after each task with pass/fail status
 
@@ -367,6 +367,14 @@ Tasks in `PLAN.md` use XML inside markdown:
       <verify>python -c "import src.config"</verify>
       <done>Config module imports successfully</done>
     </task>
+
+    <task id="1.2" depends_on="1.1">
+      <name>Add database layer</name>
+      <files>src/db.py</files>
+      <action>Create database module using config...</action>
+      <verify>python -c "import src.db"</verify>
+      <done>Database module imports successfully</done>
+    </task>
   </phase>
 </phases>
 ```
@@ -374,8 +382,7 @@ Tasks in `PLAN.md` use XML inside markdown:
 - **`<dependencies>`** — third-party packages needed, with version constraints
 - **`<review>`** — instructions for reviewing each phase's output
 - **`<task>`** — atomic unit of work with files, action, verification, and done criteria
-
-The coding agent reads this format and executes tasks sequentially. Each task's `<verify>` command must exit 0 before moving on.
+- **`depends_on`** — optional attribute on `<task>` listing comma-separated task IDs this task depends on. Omit it to depend on all prior tasks in the phase (sequential by default). Use it to express that a task has no dependencies or only specific ones, enabling parallel execution of independent tasks.
 
 ---
 
