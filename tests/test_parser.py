@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from sago.core.parser import MarkdownParser, Phase, Task
+from sago.core.parser import MarkdownParser, Phase, ResumePoint, Task
 
 
 @pytest.fixture
@@ -212,6 +212,7 @@ def test_task_to_dict() -> None:
         verify="pytest",
         done="Tests pass",
         phase_name="Phase 1",
+        depends_on=["1.0"],
     )
 
     task_dict = task.to_dict()
@@ -220,6 +221,71 @@ def test_task_to_dict() -> None:
     assert task_dict["name"] == "Test Task"
     assert task_dict["files"] == ["test.py"]
     assert task_dict["phase_name"] == "Phase 1"
+    assert task_dict["depends_on"] == ["1.0"]
+
+
+def test_parse_xml_tasks_with_depends_on(parser: MarkdownParser) -> None:
+    """Test that depends_on attributes are parsed correctly."""
+    content = """
+```xml
+<phases>
+    <phase name="Phase 1: Setup">
+        <description>Setup</description>
+        <task id="1.1">
+            <name>Init</name>
+            <files>init.py</files>
+            <action>Initialize</action>
+            <verify>true</verify>
+            <done>Done</done>
+        </task>
+        <task id="1.2" depends_on="1.1">
+            <name>Config</name>
+            <files>config.py</files>
+            <action>Add config</action>
+            <verify>true</verify>
+            <done>Done</done>
+        </task>
+    </phase>
+    <phase name="Phase 2: Features">
+        <description>Features</description>
+        <task id="2.1" depends_on="1.1, 1.2">
+            <name>CLI</name>
+            <files>cli.py</files>
+            <action>Build CLI</action>
+            <verify>true</verify>
+            <done>Done</done>
+        </task>
+    </phase>
+</phases>
+```
+"""
+    phases = parser.parse_xml_tasks(content)
+
+    assert phases[0].tasks[0].depends_on == []
+    assert phases[0].tasks[1].depends_on == ["1.1"]
+    assert phases[1].tasks[0].depends_on == ["1.1", "1.2"]
+
+
+def test_parse_xml_tasks_no_depends_on(parser: MarkdownParser) -> None:
+    """Test that tasks without depends_on get empty list (backward compatible)."""
+    content = """
+```xml
+<phases>
+    <phase name="Phase 1">
+        <description>Desc</description>
+        <task id="1.1">
+            <name>Task</name>
+            <files>f.py</files>
+            <action>Do something</action>
+            <verify>true</verify>
+            <done>Done</done>
+        </task>
+    </phase>
+</phases>
+```
+"""
+    phases = parser.parse_xml_tasks(content)
+    assert phases[0].tasks[0].depends_on == []
 
 
 def test_parse_dependencies(parser: MarkdownParser) -> None:
@@ -313,3 +379,207 @@ def test_phase_to_dict() -> None:
     assert phase_dict["name"] == "Phase 1"
     assert phase_dict["description"] == "Description"
     assert len(phase_dict["tasks"]) == 1
+
+
+def test_parse_resume_point_success(parser: MarkdownParser) -> None:
+    """Test parsing resume point after a successful task."""
+    content = """
+## Resume Point
+
+* **Last Completed:** 1.2: Add Configuration
+* **Next Task:** 2.1: Build CLI
+* **Next Action:** Create Typer CLI application
+* **Failure Reason:** None
+* **Checkpoint:** sago-checkpoint-1.2
+
+## Completed Tasks
+"""
+    rp = parser.parse_resume_point(content)
+    assert rp is not None
+    assert rp.last_completed == "1.2: Add Configuration"
+    assert rp.next_task == "2.1: Build CLI"
+    assert rp.next_action == "Create Typer CLI application"
+    assert rp.failure_reason == "None"
+    assert rp.checkpoint == "sago-checkpoint-1.2"
+
+
+def test_parse_resume_point_failure(parser: MarkdownParser) -> None:
+    """Test parsing resume point after a failed task."""
+    content = """
+## Resume Point
+
+* **Last Completed:** 1.1: Initialize Project
+* **Next Task:** 1.2: Add Configuration (retry)
+* **Next Action:** Fix config loading for nested keys
+* **Failure Reason:** pytest tests/test_config.py exited 1 — KeyError on nested.key
+* **Checkpoint:** sago-checkpoint-1.1
+
+## Completed Tasks
+"""
+    rp = parser.parse_resume_point(content)
+    assert rp is not None
+    assert rp.next_task == "1.2: Add Configuration (retry)"
+    assert "KeyError" in rp.failure_reason
+    assert rp.checkpoint == "sago-checkpoint-1.1"
+
+
+def test_parse_resume_point_all_none(parser: MarkdownParser) -> None:
+    """Test that all-None fields returns None."""
+    content = """
+## Resume Point
+
+* **Last Completed:** None
+* **Next Task:** None
+* **Next Action:** None
+* **Failure Reason:** None
+* **Checkpoint:** None
+
+## Completed Tasks
+"""
+    assert parser.parse_resume_point(content) is None
+
+
+def test_parse_resume_point_missing_section(parser: MarkdownParser) -> None:
+    """Test that missing section returns None."""
+    content = """
+## Current Context
+
+* **Active Phase:** Phase 1
+
+## Completed Tasks
+"""
+    assert parser.parse_resume_point(content) is None
+
+
+def test_resume_point_to_dict() -> None:
+    """Test ResumePoint.to_dict()."""
+    rp = ResumePoint(
+        last_completed="1.1: Setup",
+        next_task="1.2: Config",
+        next_action="Create config module",
+        failure_reason="None",
+        checkpoint="sago-checkpoint-1.1",
+    )
+    d = rp.to_dict()
+    assert d["last_completed"] == "1.1: Setup"
+    assert d["next_task"] == "1.2: Config"
+    assert d["next_action"] == "Create config module"
+    assert d["failure_reason"] == "None"
+    assert d["checkpoint"] == "sago-checkpoint-1.1"
+
+
+def test_parse_state_includes_resume_point(parser: MarkdownParser) -> None:
+    """Test that parse_state includes resume_point key."""
+    content = """
+### Current Context
+* **Active Phase:** Phase 1
+* **Current Task:** 1.2
+
+## Resume Point
+
+* **Last Completed:** 1.1: Setup
+* **Next Task:** 1.2: Config
+* **Next Action:** Create config
+* **Failure Reason:** None
+* **Checkpoint:** sago-checkpoint-1.1
+"""
+    state = parser.parse_state(content)
+    assert "resume_point" in state
+    assert state["resume_point"] is not None
+    assert state["resume_point"].last_completed == "1.1: Setup"
+
+
+def test_parse_state_resume_point_none_when_missing(parser: MarkdownParser) -> None:
+    """Test that parse_state returns None for resume_point when section missing."""
+    content = """
+### Current Context
+* **Active Phase:** Phase 1
+* **Current Task:** 1.1
+"""
+    state = parser.parse_state(content)
+    assert state["resume_point"] is None
+
+
+# --- parse_state_tasks tests ---
+
+def _make_phases() -> list[Phase]:
+    """Helper to create test phases for parse_state_tasks."""
+    return [
+        Phase(
+            name="Phase 1: Foundation",
+            description="Setup",
+            tasks=[
+                Task(id="1.1", name="Create config", files=["config.py"],
+                     action="Create config", verify="python -c 'import config'",
+                     done="Config exists", phase_name="Phase 1: Foundation"),
+                Task(id="1.2", name="Create main", files=["main.py"],
+                     action="Create main", verify="python -c 'import main'",
+                     done="Main exists", phase_name="Phase 1: Foundation"),
+            ],
+        ),
+        Phase(
+            name="Phase 2: Features",
+            description="Build features",
+            tasks=[
+                Task(id="2.1", name="Build CLI", files=["cli.py"],
+                     action="Create CLI", verify="cli --help",
+                     done="CLI works", phase_name="Phase 2: Features"),
+            ],
+        ),
+    ]
+
+
+def test_parse_state_tasks_all_pending(parser: MarkdownParser) -> None:
+    """All tasks are pending when STATE.md has no completed/failed markers."""
+    content = "# STATE.md\n\n## Current Context\n"
+    phases = _make_phases()
+
+    results = parser.parse_state_tasks(content, phases)
+
+    assert len(results) == 3
+    assert all(r["status"] == "pending" for r in results)
+    assert results[0]["id"] == "1.1"
+    assert results[0]["phase_name"] == "Phase 1: Foundation"
+
+
+def test_parse_state_tasks_done_and_failed(parser: MarkdownParser) -> None:
+    """Correctly identifies done and failed tasks."""
+    content = """\
+## Completed Tasks
+[✓] 1.1: Create config — Config exists
+[✗] 1.2: Create main — ImportError
+"""
+    phases = _make_phases()
+
+    results = parser.parse_state_tasks(content, phases)
+
+    by_id = {r["id"]: r for r in results}
+    assert by_id["1.1"]["status"] == "done"
+    assert by_id["1.2"]["status"] == "failed"
+    assert by_id["2.1"]["status"] == "pending"
+
+
+def test_parse_state_tasks_all_done(parser: MarkdownParser) -> None:
+    """All tasks done when all are marked with checkmark."""
+    content = """\
+[✓] 1.1: Create config
+[✓] 1.2: Create main
+[✓] 2.1: Build CLI
+"""
+    phases = _make_phases()
+
+    results = parser.parse_state_tasks(content, phases)
+
+    assert all(r["status"] == "done" for r in results)
+
+
+def test_parse_state_tasks_preserves_phase_name(parser: MarkdownParser) -> None:
+    """Each task result includes the correct phase_name."""
+    content = "[✓] 2.1: Build CLI\n"
+    phases = _make_phases()
+
+    results = parser.parse_state_tasks(content, phases)
+
+    cli_result = next(r for r in results if r["id"] == "2.1")
+    assert cli_result["phase_name"] == "Phase 2: Features"
+    assert cli_result["status"] == "done"
