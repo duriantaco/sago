@@ -166,7 +166,11 @@ Please provide output in the following format:
             response = await self.llm.achat_completion(messages, **kwargs)
             duration_s = time.monotonic() - start
             usage = response.get("usage", {})
-            self.logger.info(f"LLM response: {usage.get('total_tokens', 0)} tokens")
+            self.logger.info(
+                f"LLM response: prompt={usage.get('prompt_tokens', 0)}, "
+                f"completion={usage.get('completion_tokens', 0)}, "
+                f"total={usage.get('total_tokens', 0)} tokens"
+            )
             prompt_preview = ""
             for m in reversed(messages):
                 if m.get("role") == "user":

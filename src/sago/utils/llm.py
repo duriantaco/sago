@@ -36,12 +36,14 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: int = 4096,
         max_retries: int = 3,
+        warn_token_threshold: int = 50_000,
     ) -> None:
         self.model = model
         self.api_key = api_key
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.max_retries = max_retries
+        self.warn_token_threshold = warn_token_threshold
 
     def _build_kwargs(
         self,
@@ -122,6 +124,29 @@ class LLMClient:
         except Exception as e:
             self._raise_classified_error(e)
 
+    def _warn_if_over_threshold(self, messages: list[dict[str, Any]]) -> None:
+        """Log a warning if the input messages exceed the token threshold."""
+        try:
+            input_text = " ".join(m.get("content", "") or "" for m in messages)
+            input_tokens = self.count_tokens(input_text)
+            if input_tokens > self.warn_token_threshold:
+                logger.warning(
+                    f"Large input: ~{input_tokens} tokens (threshold: {self.warn_token_threshold})"
+                )
+            else:
+                logger.debug(f"Input token estimate: ~{input_tokens}")
+        except Exception as exc:
+            logger.debug(f"Token threshold check failed: {exc}")
+
+    def _log_usage(self, result: dict[str, Any]) -> None:
+        """Log token usage from a completed response."""
+        usage = result.get("usage", {})
+        logger.info(
+            f"Token usage: prompt={usage.get('prompt_tokens', 0)}, "
+            f"completion={usage.get('completion_tokens', 0)}, "
+            f"total={usage.get('total_tokens', 0)}"
+        )
+
     def _do_chat_completion(
         self,
         messages: list[dict[str, Any]],
@@ -138,13 +163,18 @@ class LLMClient:
             messages, temperature, max_tokens, tools=tools, tool_choice=tool_choice
         )
 
+        self._warn_if_over_threshold(messages)
         logger.info(f"LLM request to {self.model} with {len(messages)} messages")
 
         if stream:
-            return self._stream_completion(common_kwargs, stream_callback, litellm)
+            result = self._stream_completion(common_kwargs, stream_callback, litellm)
+            self._log_usage(result)
+            return result
 
         response = litellm.completion(**common_kwargs)
-        return self._parse_response(response)
+        result = self._parse_response(response)
+        self._log_usage(result)
+        return result
 
     async def _ado_chat_completion(
         self,
@@ -162,13 +192,18 @@ class LLMClient:
             messages, temperature, max_tokens, tools=tools, tool_choice=tool_choice
         )
 
+        self._warn_if_over_threshold(messages)
         logger.info(f"LLM request to {self.model} with {len(messages)} messages")
 
         if stream:
-            return await self._astream_completion(common_kwargs, stream_callback, litellm)
+            result = await self._astream_completion(common_kwargs, stream_callback, litellm)
+            self._log_usage(result)
+            return result
 
         response = await litellm.acompletion(**common_kwargs)
-        return self._parse_response(response)
+        result = self._parse_response(response)
+        self._log_usage(result)
+        return result
 
     def _parse_response(self, response: Any) -> dict[str, Any]:
         message = response.choices[0].message
@@ -349,6 +384,6 @@ class LLMClient:
         try:
             import litellm
 
-            return litellm.supports_function_calling(model=self.model)  # type: ignore[no-any-return]
+            return bool(litellm.supports_function_calling(model=self.model))
         except Exception:
             return False

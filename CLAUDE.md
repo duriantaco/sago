@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## What sago is
+
+Sago is a **planning and orchestration tool** for AI coding agents. It generates structured project plans from requirements, then hands off execution to a real coding agent (Claude Code, Cursor, Aider, etc.). Sago is the project manager, not the developer.
+
+**Core flow:** `sago init` -> `sago plan` -> coding agent executes PLAN.md -> `sago status` to track
+
 ## Build & Development Commands
 
 ```bash
@@ -11,20 +17,10 @@ pip install -e ".[dev]"              # With dev tools (pytest, black, ruff, mypy
 pip install -e ".[all]"              # Full install (dev + compression)
 
 # Run CLI
-sago init [project-name]             # Initialize a new project
-sago status [--path PATH]            # Show project status
+sago init [project-name]             # Initialize a new project (generates CLAUDE.md for the coding agent)
 sago plan [--path PATH]              # Generate PLAN.md from requirements
-sago execute [--path PATH]           # Execute tasks from PLAN.md
-sago run [--path PATH]               # Full workflow: plan + execute + verify
+sago status [--path PATH]            # Show project status
 sago trace [--path PATH]             # Open dashboard for a past trace
-
-# Key flags for `sago run`
-#   --compress       Enable context compression
-#   --cache/--no-cache  Smart caching (on by default)
-#   --auto-retry     Auto-fix failed tasks
-#   --trace          Open live dashboard in browser
-#   --git-commit     Auto-commit after each task
-#   --dry-run        Estimate cost without executing
 
 # Test
 pytest                               # Run all tests (includes coverage by default)
@@ -46,37 +42,28 @@ mypy src/                            # Type check (strict mode)
 
 - **`cli.py`** -- Typer CLI app, entry point via `sago = "sago.cli:app"`
 - **`core/`** -- Configuration (Pydantic BaseSettings with `.env`), markdown/XML parsing, project template initialization
-- **`agents/`** -- Multi-agent orchestration system:
+- **`agents/`** -- Planning and orchestration:
   - `base.py`: Abstract `BaseAgent` with LLM integration and optional context compression
-  - `planner.py`: Generates PLAN.md from requirements
-  - `executor.py`: Executes tasks (writes code), compresses context when enabled
-  - `verifier.py`: Validates task completion
-  - `orchestrator.py`: Coordinates plan->execute->verify workflow with caching and parallel/sequential execution
-  - `dependencies.py`: `DependencyResolver` using topological sort for wave-based execution and circular dependency detection
-  - `self_healing.py`: Recovery logic for failed tasks (--auto-retry)
-- **`utils/`** -- LLM client (LiteLLM wrapper), context compression (SlidingWindow/LLMLingua/Passthrough strategies), smart task caching, git integration, cost estimation
-- **`templates/`** -- 7 markdown templates (PROJECT, REQUIREMENTS, ROADMAP, STATE, PLAN, SUMMARY, IMPORTANT) generated on `sago init`
+  - `planner.py`: Generates PLAN.md from requirements (env-aware, suggests dependencies)
+  - `orchestrator.py`: Coordinates the planning and replan workflows
+  - `replanner.py`: Surgically updates PLAN.md based on feedback while preserving completed work
+  - `reviewer.py`: Reviews generated code quality post-phase
+- **`utils/`** -- LLM client (LiteLLM wrapper), environment detection, context compression, smart task caching, git integration, repo map generation
+- **`templates/`** -- Markdown templates (PROJECT, REQUIREMENTS, STATE, PLAN, IMPORTANT, CLAUDE) generated on `sago init`
 
 ### Key Design Patterns
 
-- **Async-first**: All agents use `async/await`; orchestrator can run independent tasks in parallel via asyncio (off by default)
+- **Async-first**: All agents use `async/await`
 - **Pydantic everywhere**: Config via `BaseSettings`, data models for tasks/phases/requirements
 - **LiteLLM abstraction**: Multi-provider LLM support (OpenAI, Anthropic, Azure, etc.) with Tenacity retry logic
-- **Wave-based execution**: `DependencyResolver` groups tasks into dependency-free waves; sequential by default, parallel opt-in
+- **Planning is the product**: Sago's value is in generating good PLAN.md files, not in executing them
 
 ### Agent Workflow
 
-1. `PlannerAgent` reads PROJECT.md + REQUIREMENTS.md -> generates PLAN.md with XML task structure
-2. `DependencyResolver` analyzes tasks -> creates execution waves
-3. `ExecutorAgent` processes each task (compresses context if --compress enabled)
-4. `VerifierAgent` runs verification commands per task
-5. `Orchestrator` coordinates all phases, manages caching, and STATE.md updates
-
-### Integrated Features
-
-- **Smart Caching** (`--cache`): Hashes task definition + file contents, skips re-execution on cache hit
-- **Context Compression** (`--compress`): Opt-in, compresses LLM context via SlidingWindow before executor LLM calls
-- **Auto-retry** (`--auto-retry`): Self-healing agent attempts to fix failed tasks
+1. `PlannerAgent` reads PROJECT.md + REQUIREMENTS.md + environment -> generates PLAN.md with XML task structure
+2. External coding agent (Claude Code, Cursor, etc.) executes tasks following PLAN.md
+3. `sago status` tracks progress via STATE.md (including resume point)
+4. `sago replan` updates PLAN.md based on feedback, preserving completed work
 
 ## Code Style
 
@@ -89,4 +76,4 @@ mypy src/                            # Type check (strict mode)
 ## Configuration
 
 The app loads settings from environment variables / `.env` file. Key settings:
-`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`, `PLANNING_DIR` (default `.planning`), `ENABLE_GIT_COMMITS`, `ENABLE_PARALLEL_EXECUTION` (default false), `ENABLE_COMPRESSION` (default false), `MAX_CONTEXT_TOKENS` (default 100000), `LOG_LEVEL`
+`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`, `PLANNING_DIR` (default `.planning`), `LOG_LEVEL`

@@ -76,3 +76,6 @@ Thumbs.db
 /IMPORTANT.md
 
 .planning
+
+src/sago/chunks/
+.mypy_cache/
