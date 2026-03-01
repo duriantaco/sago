@@ -6,8 +6,7 @@ import pytest
 from sago.agents.base import AgentResult, AgentStatus
 from sago.agents.orchestrator import Orchestrator
 from sago.agents.replanner import ReplannerAgent
-from sago.core.config import Config
-
+from sago.core.config import Config  # noqa: I001
 
 SAMPLE_PLAN = """# PLAN.md
 

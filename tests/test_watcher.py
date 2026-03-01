@@ -5,7 +5,6 @@ import pytest
 
 from sago.core.parser import Phase, Task
 from sago.web.watcher import (
-    MdFileContent,
     ProjectWatcher,
     _is_ignored,
     _load_gitignore_patterns,
