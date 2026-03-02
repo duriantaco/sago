@@ -9,8 +9,8 @@ from sago.core.config import Config
 
 def test_config_default_values() -> None:
     """Test that config loads with default values."""
-    config = Config()
-    assert config.llm_provider == "openai"
+    config = Config(_env_file=None)  # type: ignore[call-arg]
+    assert config.llm_provider == "anthropic"
     assert config.llm_temperature == 0.1
     assert config.enable_git_commits is True
     assert config.log_level == "INFO"
@@ -43,11 +43,6 @@ def test_config_with_env_file(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("LLM_PROVIDER=azure\nLLM_MODEL=gpt-4\n")
 
-    original_cwd = os.getcwd()
-    try:
-        os.chdir(tmp_path)
-        config = Config()
-        assert config.llm_provider == "azure"
-        assert config.llm_model == "gpt-4"
-    finally:
-        os.chdir(original_cwd)
+    config = Config(_env_file=env_file)  # type: ignore[call-arg]
+    assert config.llm_provider == "azure"
+    assert config.llm_model == "gpt-4"

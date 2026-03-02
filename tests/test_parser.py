@@ -502,6 +502,7 @@ def test_parse_state_resume_point_none_when_missing(parser: MarkdownParser) -> N
 
 # --- parse_state_tasks tests ---
 
+
 def _make_phases() -> list[Phase]:
     """Helper to create test phases for parse_state_tasks."""
     return [
@@ -509,21 +510,39 @@ def _make_phases() -> list[Phase]:
             name="Phase 1: Foundation",
             description="Setup",
             tasks=[
-                Task(id="1.1", name="Create config", files=["config.py"],
-                     action="Create config", verify="python -c 'import config'",
-                     done="Config exists", phase_name="Phase 1: Foundation"),
-                Task(id="1.2", name="Create main", files=["main.py"],
-                     action="Create main", verify="python -c 'import main'",
-                     done="Main exists", phase_name="Phase 1: Foundation"),
+                Task(
+                    id="1.1",
+                    name="Create config",
+                    files=["config.py"],
+                    action="Create config",
+                    verify="python -c 'import config'",
+                    done="Config exists",
+                    phase_name="Phase 1: Foundation",
+                ),
+                Task(
+                    id="1.2",
+                    name="Create main",
+                    files=["main.py"],
+                    action="Create main",
+                    verify="python -c 'import main'",
+                    done="Main exists",
+                    phase_name="Phase 1: Foundation",
+                ),
             ],
         ),
         Phase(
             name="Phase 2: Features",
             description="Build features",
             tasks=[
-                Task(id="2.1", name="Build CLI", files=["cli.py"],
-                     action="Create CLI", verify="cli --help",
-                     done="CLI works", phase_name="Phase 2: Features"),
+                Task(
+                    id="2.1",
+                    name="Build CLI",
+                    files=["cli.py"],
+                    action="Create CLI",
+                    verify="cli --help",
+                    done="CLI works",
+                    phase_name="Phase 2: Features",
+                ),
             ],
         ),
     ]

@@ -98,9 +98,7 @@ def generate_repo_map(
     files_processed = 0
 
     for root, dirs, files in os.walk(project_path):
-        dirs[:] = [
-            d for d in sorted(dirs) if d not in _SKIP_DIRS and not d.endswith(".egg-info")
-        ]
+        dirs[:] = [d for d in sorted(dirs) if d not in _SKIP_DIRS and not d.endswith(".egg-info")]
         for fname in sorted(files):
             if not fname.endswith(".py"):
                 continue

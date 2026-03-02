@@ -31,6 +31,7 @@ def _load_config(project_path: Path | None = None) -> Config:
         config = Config(_env_file=env_file)  # type: ignore[call-arg]
     return config
 
+
 # Provider-specific env vars that litellm checks automatically
 _PROVIDER_KEY_ENV_VARS: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
@@ -254,9 +255,7 @@ def _show_plan_summary(project_path: Path) -> list[str]:
     # Dependencies panel
     if dependencies:
         dep_text = "\n".join(f"  - {dep}" for dep in dependencies)
-        console.print(
-            Panel(dep_text, title="Dependencies", border_style="blue")
-        )
+        console.print(Panel(dep_text, title="Dependencies", border_style="blue"))
 
     return dependencies
 
@@ -338,14 +337,14 @@ def status(
 
 def _do_plan(project_path: Path, force: bool) -> None:
     _load_config(project_path)
-    _check_llm_configured()
-
     manager = ProjectManager(config)
 
     if not manager.is_sago_project(project_path):
         console.print(f"[red]Not a sago project: {project_path}[/red]")
         console.print("[yellow]Run 'sago init' first[/yellow]")
         raise typer.Exit(1)
+
+    _check_llm_configured()
 
     plan_file = project_path / "PLAN.md"
     if plan_file.exists() and not force:
@@ -424,20 +423,20 @@ def _get_phase_status(
             status = "partial"
         else:
             status = "pending"
-        result.append({
-            "name": phase.name,
-            "done": done,
-            "failed": failed,
-            "pending": pending,
-            "total": len(phase.tasks),
-            "status": status,
-        })
+        result.append(
+            {
+                "name": phase.name,
+                "done": done,
+                "failed": failed,
+                "pending": pending,
+                "total": len(phase.tasks),
+                "status": status,
+            }
+        )
     return result
 
 
-def _write_phase_summary_to_state(
-    state_file: Path, phase_name: str, review_output: str
-) -> None:
+def _write_phase_summary_to_state(state_file: Path, phase_name: str, review_output: str) -> None:
     """Append a phase summary to STATE.md (skips if already present)."""
     header = f"## Phase Summary: {phase_name}"
     existing = state_file.read_text(encoding="utf-8") if state_file.exists() else ""
@@ -447,9 +446,7 @@ def _write_phase_summary_to_state(
     state_file.write_text(existing + block, encoding="utf-8")
 
 
-def _show_plan_diff(
-    old_phases: list[Phase], new_phases: list[Phase]
-) -> None:
+def _show_plan_diff(old_phases: list[Phase], new_phases: list[Phase]) -> None:
     """Show added/modified/removed tasks between old and new plan."""
     old_task_ids = {t.id for p in old_phases for t in p.tasks}
     new_task_ids = {t.id for p in new_phases for t in p.tasks}
@@ -462,9 +459,13 @@ def _show_plan_diff(
     for tid in old_task_ids & new_task_ids:
         old_t = old_tasks_by_id[tid]
         new_t = new_tasks_by_id[tid]
-        if (old_t.name != new_t.name or old_t.action != new_t.action
-                or old_t.files != new_t.files or old_t.verify != new_t.verify
-                or old_t.depends_on != new_t.depends_on):
+        if (
+            old_t.name != new_t.name
+            or old_t.action != new_t.action
+            or old_t.files != new_t.files
+            or old_t.verify != new_t.verify
+            or old_t.depends_on != new_t.depends_on
+        ):
             modified.add(tid)
 
     console.print(
@@ -491,8 +492,6 @@ def _do_replan(
     auto_apply: bool = False,
 ) -> None:
     _load_config(project_path)
-    _check_llm_configured()
-
     manager = ProjectManager(config)
     parser = MarkdownParser()
 
@@ -500,6 +499,8 @@ def _do_replan(
         console.print(f"[red]Not a sago project: {project_path}[/red]")
         console.print("[yellow]Run 'sago init' first[/yellow]")
         raise typer.Exit(1)
+
+    _check_llm_configured()
 
     plan_file = project_path / "PLAN.md"
     if not plan_file.exists():
@@ -519,10 +520,14 @@ def _do_replan(
     else:
         for phase in old_phases:
             for task in phase.tasks:
-                task_states.append({
-                    "id": task.id, "name": task.name,
-                    "status": "pending", "phase_name": phase.name,
-                })
+                task_states.append(
+                    {
+                        "id": task.id,
+                        "name": task.name,
+                        "status": "pending",
+                        "phase_name": phase.name,
+                    }
+                )
 
     done_count = sum(1 for ts in task_states if ts["status"] == "done")
     failed_count = sum(1 for ts in task_states if ts["status"] == "failed")
@@ -577,21 +582,15 @@ def _do_replan(
             console=console,
         ) as progress:
             progress.add_task(description=f"Reviewing {ps['name']}...", total=None)
-            review_result = asyncio.run(
-                orchestrator.run_review(project_path, phase, review_prompt)
-            )
+            review_result = asyncio.run(orchestrator.run_review(project_path, phase, review_prompt))
 
         if review_result.success:
             review_text = review_result.output
             review_outputs.append(review_text)
-            console.print(
-                Panel(review_text, title=f"Review: {ps['name']}", border_style="cyan")
-            )
+            console.print(Panel(review_text, title=f"Review: {ps['name']}", border_style="cyan"))
             _write_phase_summary_to_state(state_file, ps["name"], review_text)
         else:
-            console.print(
-                f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]"
-            )
+            console.print(f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]")
 
     # Prompt for feedback (skip if provided via --feedback)
     if feedback is None:

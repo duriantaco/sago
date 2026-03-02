@@ -68,8 +68,8 @@ def sago_project(tmp_path: Path) -> Path:
     )
     (tmp_path / "REQUIREMENTS.md").write_text(
         "# Test Requirements\n\n## V1 Requirements (MVP)\n\n"
-        '* [ ] **REQ-1:** Create a config module\n'
-        '* [ ] **REQ-2:** Create a main module\n'
+        "* [ ] **REQ-1:** Create a config module\n"
+        "* [ ] **REQ-2:** Create a main module\n"
     )
     (tmp_path / "STATE.md").write_text(SAMPLE_STATE)
     (tmp_path / "IMPORTANT.md").write_text("# Important\nNothing yet.\n")

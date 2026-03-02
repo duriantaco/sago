@@ -46,9 +46,7 @@ UPDATED_XML = """\
 def test_init_creates_project(tmp_path: Path) -> None:
     """sago init should create all template files."""
     project_path = tmp_path / "test-project"
-    result = runner.invoke(
-        app, ["init", "test-project", "--path", str(project_path), "--yes"]
-    )
+    result = runner.invoke(app, ["init", "test-project", "--path", str(project_path), "--yes"])
     assert result.exit_code == 0
     assert "Project initialized" in result.output
     for filename in ["PROJECT.md", "REQUIREMENTS.md", "STATE.md", "CLAUDE.md", "IMPORTANT.md"]:
@@ -96,9 +94,7 @@ def test_status_after_plan(sago_project_with_plan: Path) -> None:
 
 def test_status_shows_completed_tasks(sago_project_with_plan: Path) -> None:
     """Status should reflect tasks marked complete in STATE.md."""
-    result = runner.invoke(
-        app, ["status", "--path", str(sago_project_with_plan), "--detailed"]
-    )
+    result = runner.invoke(app, ["status", "--path", str(sago_project_with_plan), "--detailed"])
     assert result.exit_code == 0
     assert "1" in result.output  # at least 1 completed
     assert "Create config" in result.output
@@ -143,8 +139,10 @@ def test_replan_one_shot(sago_project_with_plan: Path) -> None:
             app,
             [
                 "replan",
-                "--path", str(sago_project_with_plan),
-                "--feedback", "add logging",
+                "--path",
+                str(sago_project_with_plan),
+                "--feedback",
+                "add logging",
                 "--yes",
             ],
         )
@@ -160,9 +158,7 @@ def test_full_workflow_init_plan_status(tmp_path: Path) -> None:
     project_path = tmp_path / "full-test"
 
     # Step 1: init
-    result = runner.invoke(
-        app, ["init", "full-test", "--path", str(project_path), "--yes"]
-    )
+    result = runner.invoke(app, ["init", "full-test", "--path", str(project_path), "--yes"])
     assert result.exit_code == 0
 
     # Write real project content (not placeholders)
@@ -172,8 +168,7 @@ def test_full_workflow_init_plan_status(tmp_path: Path) -> None:
         "## Core Architecture\nMonolith.\n"
     )
     (project_path / "REQUIREMENTS.md").write_text(
-        "# Requirements\n\n## V1 Requirements (MVP)\n\n"
-        '* [ ] **REQ-1:** Build the thing\n'
+        "# Requirements\n\n## V1 Requirements (MVP)\n\n* [ ] **REQ-1:** Build the thing\n"
     )
 
     # Step 2: plan

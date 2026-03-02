@@ -63,13 +63,18 @@ Rules for modifying the plan:
         phases = self.parser.parse_xml_tasks(plan_content)
         state_summary = self._build_state_summary(project_path, phases)
 
-        project_context = self._load_project_context(project_path, skip_repo_map=bool(extra_repo_map))
+        project_context = self._load_project_context(
+            project_path, skip_repo_map=bool(extra_repo_map)
+        )
 
         if extra_repo_map:
             project_context["REPO_MAP"] = extra_repo_map
 
         updated_xml = await self._generate_replan_xml(
-            current_xml, state_summary, feedback, project_context,
+            current_xml,
+            state_summary,
+            feedback,
+            project_context,
             review_context=review_context,
         )
         updated_xml = self._sanitize_xml(updated_xml)

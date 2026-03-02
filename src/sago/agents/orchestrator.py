@@ -132,9 +132,7 @@ class Orchestrator:
         finally:
             tracer.close()
 
-    async def run_review(
-        self, project_path: Path, phase: Phase, review_prompt: str
-    ) -> AgentResult:
+    async def run_review(self, project_path: Path, phase: Phase, review_prompt: str) -> AgentResult:
         """Run the reviewer agent on a completed phase.
 
         Args:
@@ -145,11 +143,13 @@ class Orchestrator:
         Returns:
             AgentResult with review output.
         """
-        return await self.reviewer.execute({
-            "project_path": project_path,
-            "phase": phase,
-            "review_prompt": review_prompt,
-        })
+        return await self.reviewer.execute(
+            {
+                "project_path": project_path,
+                "phase": phase,
+                "review_prompt": review_prompt,
+            }
+        )
 
     async def run_replan_workflow(
         self,
@@ -183,12 +183,14 @@ class Orchestrator:
             return (datetime.now() - start_time).total_seconds()
 
         try:
-            result = await self.replanner.execute({
-                "project_path": project_path,
-                "feedback": feedback,
-                "review_context": review_context,
-                "repo_map": repo_map,
-            })
+            result = await self.replanner.execute(
+                {
+                    "project_path": project_path,
+                    "feedback": feedback,
+                    "review_context": review_context,
+                    "repo_map": repo_map,
+                }
+            )
 
             if not result.success:
                 raise ValueError(f"Replan failed: {result.error}")

@@ -104,10 +104,12 @@ async def test_replan_prompt_includes_current_xml(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -123,10 +125,12 @@ async def test_replan_prompt_includes_state_summary(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -142,10 +146,12 @@ async def test_replan_system_prompt_preserves_done(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         system_msg = call_args[0]["content"]
@@ -161,10 +167,12 @@ async def test_replan_prompt_includes_feedback(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -179,10 +187,12 @@ async def test_replan_invalid_xml_raises(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": "Here is the updated plan but no XML."}
 
-        result = await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        result = await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         assert result.status == AgentStatus.FAILURE
         assert result.error is not None
@@ -191,10 +201,12 @@ async def test_replan_invalid_xml_raises(
 @pytest.mark.asyncio
 async def test_replan_missing_plan_raises(replanner: ReplannerAgent, tmp_path: Path) -> None:
     """Missing PLAN.md should raise an error."""
-    result = await replanner.execute({
-        "project_path": tmp_path,
-        "feedback": "add rate limiting",
-    })
+    result = await replanner.execute(
+        {
+            "project_path": tmp_path,
+            "feedback": "add rate limiting",
+        }
+    )
 
     assert result.status == AgentStatus.FAILURE
     assert "PLAN.md not found" in (result.error or "")
@@ -208,10 +220,12 @@ async def test_replan_saves_updated_plan(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        result = await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        result = await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         assert result.status == AgentStatus.SUCCESS
         new_content = (project_with_plan / "PLAN.md").read_text()
@@ -302,11 +316,13 @@ async def test_replan_prompt_includes_review_context(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "fix the issues",
-            "review_context": "[WARNING] config.py missing DB_URL validation",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "fix the issues",
+                "review_context": "[WARNING] config.py missing DB_URL validation",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -322,10 +338,12 @@ async def test_replan_prompt_without_review_context(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -333,9 +351,7 @@ async def test_replan_prompt_without_review_context(
 
 
 @pytest.mark.asyncio
-async def test_replan_loads_repo_map(
-    replanner: ReplannerAgent, project_with_plan: Path
-) -> None:
+async def test_replan_loads_repo_map(replanner: ReplannerAgent, project_with_plan: Path) -> None:
     """Replan should include repo map in project context."""
     # Create a Python file so the repo map has something to find
     (project_with_plan / "config.py").write_text("class AppConfig:\n    pass\n")
@@ -343,10 +359,12 @@ async def test_replan_loads_repo_map(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "add rate limiting",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "add rate limiting",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -362,11 +380,13 @@ async def test_replan_corrective_task_rule_in_prompt(
     with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
         mock_llm.return_value = {"content": UPDATED_XML}
 
-        await replanner.execute({
-            "project_path": project_with_plan,
-            "feedback": "fix issues",
-            "review_context": "some review feedback",
-        })
+        await replanner.execute(
+            {
+                "project_path": project_with_plan,
+                "feedback": "fix issues",
+                "review_context": "some review feedback",
+            }
+        )
 
         call_args = mock_llm.call_args[0][0]
         user_msg = call_args[1]["content"]
@@ -389,9 +409,13 @@ async def test_orchestrator_run_review(tmp_path: Path) -> None:
         description="Set up project",
         tasks=[
             Task(
-                id="1.1", name="Create config", files=["config.py"],
-                action="Create config", verify="python -c 'import config'",
-                done="Config exists", phase_name="Phase 1: Foundation",
+                id="1.1",
+                name="Create config",
+                files=["config.py"],
+                action="Create config",
+                verify="python -c 'import config'",
+                done="Config exists",
+                phase_name="Phase 1: Foundation",
             ),
         ],
     )
@@ -405,9 +429,7 @@ async def test_orchestrator_run_review(tmp_path: Path) -> None:
     with patch.object(orchestrator.reviewer, "execute", new_callable=AsyncMock) as mock_exec:
         mock_exec.return_value = mock_review
 
-        result = await orchestrator.run_review(
-            tmp_path, phase, "Review for correctness"
-        )
+        result = await orchestrator.run_review(tmp_path, phase, "Review for correctness")
 
         assert result.success
         assert "missing validation" in result.output

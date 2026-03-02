@@ -132,9 +132,7 @@ async def test_run_workflow_plan_exists(
 
 
 @pytest.mark.asyncio
-async def test_run_workflow_plan_generation_failure(
-    orchestrator: Orchestrator, tmp_path: Path
-):
+async def test_run_workflow_plan_generation_failure(orchestrator: Orchestrator, tmp_path: Path):
     """Test workflow fails when plan generation fails."""
     mock_result = AgentResult(
         status=AgentStatus.FAILURE,
@@ -156,13 +154,9 @@ async def test_run_workflow_plan_generation_failure(
 
 
 @pytest.mark.asyncio
-async def test_run_workflow_template_plan_rejected(
-    orchestrator: Orchestrator, tmp_path: Path
-):
+async def test_run_workflow_template_plan_rejected(orchestrator: Orchestrator, tmp_path: Path):
     """Test that template PLAN.md is rejected when plan=False."""
-    (tmp_path / "PLAN.md").write_text(
-        "# PLAN.md\n\nRun `sago plan` to generate this file\n"
-    )
+    (tmp_path / "PLAN.md").write_text("# PLAN.md\n\nRun `sago plan` to generate this file\n")
 
     result = await orchestrator.run_workflow(
         project_path=tmp_path,
@@ -174,9 +168,7 @@ async def test_run_workflow_template_plan_rejected(
 
 
 @pytest.mark.asyncio
-async def test_run_workflow_empty_plan(
-    orchestrator: Orchestrator, tmp_path: Path
-):
+async def test_run_workflow_empty_plan(orchestrator: Orchestrator, tmp_path: Path):
     """Test workflow fails when PLAN.md has no tasks."""
     (tmp_path / "PLAN.md").write_text("# PLAN.md\n\nNo tasks here.\n")
 

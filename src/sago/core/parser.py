@@ -240,16 +240,13 @@ class MarkdownParser:
 
         Returns None if the section is missing or all fields are "None".
         """
-        match = re.search(
-            r"## Resume Point\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL
-        )
+        match = re.search(r"## Resume Point\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
         if not match:
             return None
 
         section = match.group(1)
         fields: dict[str, str] = {}
-        for label in ("Last Completed", "Next Task", "Next Action",
-                       "Failure Reason", "Checkpoint"):
+        for label in ("Last Completed", "Next Task", "Next Action", "Failure Reason", "Checkpoint"):
             m = re.search(rf"\*\s*\*\*{re.escape(label)}:\*\*\s*(.*)", section)
             fields[label] = m.group(1).strip() if m else "None"
 
@@ -398,12 +395,14 @@ class MarkdownParser:
                     status = "failed"
                 else:
                     status = "pending"
-                results.append({
-                    "id": task.id,
-                    "name": task.name,
-                    "status": status,
-                    "phase_name": phase.name,
-                })
+                results.append(
+                    {
+                        "id": task.id,
+                        "name": task.name,
+                        "status": status,
+                        "phase_name": phase.name,
+                    }
+                )
         return results
 
     def parse_plan_file(self, file_path: Path) -> list[Phase]:
