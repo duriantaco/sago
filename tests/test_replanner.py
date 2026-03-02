@@ -433,7 +433,7 @@ async def test_orchestrator_replan_passes_review_context(tmp_path: Path) -> None
 
     with patch.object(orchestrator.replanner, "execute", new_callable=AsyncMock) as mock_replan:
 
-        def do_replan(context: dict) -> AgentResult:
+        def do_replan(_context: dict) -> AgentResult:
             (tmp_path / "PLAN.md").write_text(
                 SAMPLE_PLAN.replace("Create main", "Create main with CLI")
             )

@@ -16,8 +16,8 @@ class PlannerAgent(BaseAgent):
         self.parser = MarkdownParser()
         self.project_manager = ProjectManager(self.config)
 
-    def _build_system_prompt(self, role: str) -> str:
-        return f"""You are a {role}.
+    def _build_system_prompt(self) -> str:
+        return """You are an expert software architect and project planner.
 
 Rules:
 - Break work into atomic, independently executable tasks
@@ -137,9 +137,7 @@ Rules:
         messages = [
             {
                 "role": "system",
-                "content": self._build_system_prompt(
-                    "expert software architect and project planner"
-                ),
+                "content": self._build_system_prompt(),
             },
             {
                 "role": "user",

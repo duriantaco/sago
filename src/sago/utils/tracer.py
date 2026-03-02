@@ -72,8 +72,7 @@ class Tracer:
                 self._file.close()
             safe_path = Path(trace_path).resolve()
             safe_path.parent.mkdir(parents=True, exist_ok=True)
-            f = open(safe_path, "a", encoding="utf-8")  # pragma: no skylos
-            self._file = f
+            self._file = safe_path.open("a", encoding="utf-8")
             self._trace_id = uuid.uuid4().hex[:16]
             self._model = model
             self._enabled = True

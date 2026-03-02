@@ -104,16 +104,13 @@ class BaseAgent(ABC):
         """
         pass
 
-    def _build_system_prompt(self, role: str) -> str:
-        """Build system prompt for agent role.
-
-        Args:
-            role: Description of agent's role
+    def _build_system_prompt(self) -> str:
+        """Build system prompt for this agent.
 
         Returns:
             System prompt string
         """
-        return f"""You are a {role}.
+        return f"""You are a {self.__class__.__name__}.
 
 Rules:
 - Generate complete, working code — never pseudocode, stubs, or TODO comments
@@ -135,7 +132,7 @@ Rules:
             List of message dictionaries
         """
         return [
-            {"role": "system", "content": self._build_system_prompt(self.__class__.__name__)},
+            {"role": "system", "content": self._build_system_prompt()},
             {
                 "role": "user",
                 "content": f"""Task: {task}

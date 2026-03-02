@@ -46,7 +46,7 @@ def test_tracer_configure_and_emit(fresh_tracer: Tracer, tmp_trace: Path) -> Non
 def test_tracer_span_tracks_duration(fresh_tracer: Tracer, tmp_trace: Path) -> None:
     fresh_tracer.configure(tmp_trace)
 
-    with fresh_tracer.span("llm_call", "ExecutorAgent", {"model": "gpt-4o"}) as _state:
+    with fresh_tracer.span("llm_call", "ExecutorAgent", {"model": "gpt-4o"}):
         pass  # instant span
 
     fresh_tracer.close()

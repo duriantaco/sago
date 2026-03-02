@@ -13,6 +13,17 @@ logger = logging.getLogger(__name__)
 class ReviewerAgent(BaseAgent):
     """Reviews completed phase output and produces feedback for subsequent phases."""
 
+    def _build_system_prompt(self) -> str:
+        return """You are a senior code reviewer auditing completed work from a project phase.
+
+Rules:
+- Generate complete, working code — never pseudocode, stubs, or TODO comments
+- Match the existing project's style, naming conventions, and patterns
+- Every file you output must be syntactically valid and immediately runnable
+- Only output what was asked for — no extra files, no unsolicited refactoring
+- If the task specifies a verification command, your output MUST pass it
+"""
+
     async def execute(self, context: dict[str, Any]) -> AgentResult:
         try:
             return await self._do_execute(context)
@@ -102,9 +113,7 @@ class ReviewerAgent(BaseAgent):
         return [
             {
                 "role": "system",
-                "content": self._build_system_prompt(
-                    "senior code reviewer auditing completed work from a project phase"
-                ),
+                "content": self._build_system_prompt(),
             },
             {
                 "role": "user",

@@ -66,7 +66,7 @@ def test_plan_generates_plan(sago_project: Path) -> None:
         metadata={"plan_path": str(sago_project / "PLAN.md")},
     )
 
-    def fake_planner_execute(context: dict) -> AgentResult:
+    def fake_planner_execute(_context: dict) -> AgentResult:
         (sago_project / "PLAN.md").write_text(SAMPLE_PLAN)
         return mock_result
 
@@ -114,7 +114,7 @@ def test_replan_one_shot(sago_project_with_plan: Path) -> None:
         metadata={"plan_path": str(sago_project_with_plan / "PLAN.md")},
     )
 
-    def fake_replan_execute(context: dict) -> AgentResult:
+    def fake_replan_execute(_context: dict) -> AgentResult:
         # Write the updated plan
         updated_plan = f"# Updated Plan\n\n```xml\n{UPDATED_XML}\n```\n"
         (sago_project_with_plan / "PLAN.md").write_text(updated_plan)
@@ -183,7 +183,7 @@ def test_full_workflow_init_plan_status(tmp_path: Path) -> None:
         metadata={"plan_path": str(project_path / "PLAN.md")},
     )
 
-    def fake_planner(context: dict) -> AgentResult:
+    def fake_planner(_context: dict) -> AgentResult:
         (project_path / "PLAN.md").write_text(SAMPLE_PLAN)
         return mock_result
 

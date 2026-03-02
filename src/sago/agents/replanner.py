@@ -14,8 +14,8 @@ class ReplannerAgent(BaseAgent):
         super().__init__(*args, **kwargs)
         self.parser = MarkdownParser()
 
-    def _build_system_prompt(self, role: str) -> str:
-        return f"""You are a {role}.
+    def _build_system_prompt(self) -> str:
+        return """You are an expert software architect updating an existing project plan.
 
 You are UPDATING an existing project plan, not creating one from scratch.
 
@@ -189,9 +189,7 @@ Phase Review Feedback:
         messages = [
             {
                 "role": "system",
-                "content": self._build_system_prompt(
-                    "expert software architect updating an existing project plan"
-                ),
+                "content": self._build_system_prompt(),
             },
             {
                 "role": "user",
