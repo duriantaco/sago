@@ -58,11 +58,11 @@ class Config(BaseSettings):
     )
 
     llm_provider: str = Field(
-        default="openai",
+        default="anthropic",
         description="LLM provider (openai, anthropic, azure, etc.)",
     )
     llm_model: str = Field(
-        default="gpt-4o",
+        default="claude-sonnet-4-20250514",
         description="Model name to use for AI operations",
     )
     llm_api_key: str = Field(

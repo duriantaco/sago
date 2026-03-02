@@ -206,7 +206,7 @@ class TestReviewerAgent:
         self, reviewer: ReviewerAgent, sample_phase: Phase, tmp_path: Path
     ) -> None:
         ctx = reviewer._build_review_context(sample_phase, tmp_path)
-        messages = reviewer._build_review_messages("Check quality.", ctx, sample_phase)
+        messages = reviewer._build_review_messages("Check quality.", ctx)
         assert len(messages) == 2
         assert messages[0]["role"] == "system"
         assert messages[1]["role"] == "user"

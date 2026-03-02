@@ -44,7 +44,7 @@ Rules:
         self.logger.info(f"Reviewing phase: {phase.name}")
 
         review_context = self._build_review_context(phase, project_path)
-        messages = self._build_review_messages(review_prompt, review_context, phase)
+        messages = self._build_review_messages(review_prompt, review_context)
 
         response = await self._call_llm(messages)
         review_output: str = response["content"]
@@ -108,7 +108,7 @@ Rules:
         return "\n".join(parts)
 
     def _build_review_messages(
-        self, review_prompt: str, review_context: str, phase: Phase
+        self, review_prompt: str, review_context: str
     ) -> list[dict[str, str]]:
         return [
             {

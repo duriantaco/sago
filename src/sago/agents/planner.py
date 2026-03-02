@@ -49,7 +49,7 @@ Rules:
         self._validate_plan(plan_xml)
 
         plan_path = project_path / "PLAN.md"
-        self._save_plan(plan_path, plan_xml, project_context)
+        self._save_plan(plan_path, plan_xml)
 
         return self._create_result(
             status=AgentStatus.SUCCESS,
@@ -271,7 +271,7 @@ Generate a complete, executable plan now:""",
 
         self.logger.info("Plan XML validated successfully")
 
-    def _save_plan(self, plan_path: Path, plan_xml: str, project_context: dict[str, str]) -> None:
+    def _save_plan(self, plan_path: Path, plan_xml: str) -> None:
         content = f"""# PLAN.md
 
 > **CRITICAL COMPONENT:** This file uses a specific XML schema to force the AI into "Atomic Task" mode.

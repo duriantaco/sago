@@ -75,7 +75,7 @@ Rules for modifying the plan:
         updated_xml = self._sanitize_xml(updated_xml)
         self._validate_plan(updated_xml)
 
-        self._save_plan(plan_path, updated_xml, project_context)
+        self._save_plan(plan_path, updated_xml)
 
         return self._create_result(
             status=AgentStatus.SUCCESS,
@@ -260,7 +260,7 @@ Generate the complete updated plan now:""",
 
         self.logger.info("Updated plan XML validated successfully")
 
-    def _save_plan(self, plan_path: Path, plan_xml: str, project_context: dict[str, str]) -> None:
+    def _save_plan(self, plan_path: Path, plan_xml: str) -> None:
         content = f"""# PLAN.md
 
 > **CRITICAL COMPONENT:** This file uses a specific XML schema to force the AI into "Atomic Task" mode.
