@@ -45,3 +45,13 @@ def test_config_with_env_file(tmp_path: Path) -> None:
     config = Config(_env_file=env_file)  # type: ignore[call-arg]
     assert config.llm_provider == "azure"
     assert config.llm_model == "gpt-4"
+
+
+def test_is_chatgpt_subscription_detected_by_provider() -> None:
+    config = Config(llm_provider="chatgpt", llm_model="chatgpt/gpt-5.3-codex")
+    assert config.is_chatgpt_subscription is True
+
+
+def test_is_chatgpt_subscription_detected_by_model() -> None:
+    config = Config(llm_provider="openai", llm_model="chatgpt/gpt-5.4")
+    assert config.is_chatgpt_subscription is True

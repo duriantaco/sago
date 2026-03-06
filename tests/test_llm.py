@@ -143,3 +143,14 @@ def test_llm_client_streaming(mock_completion: MagicMock, llm_client: LLMClient)
     assert result["content"] == "Hello world"
     assert result["finish_reason"] == "stop"
     assert chunks_received == ["Hello ", "world"]
+
+
+def test_chatgpt_model_strips_token_limit_kwargs() -> None:
+    client = LLMClient(model="chatgpt/gpt-5.3-codex", api_key=None, max_tokens=1234)
+    kwargs = client._build_kwargs(  # noqa: SLF001 - testing provider-specific sanitization
+        messages=[{"role": "user", "content": "hi"}],
+        temperature=None,
+        max_tokens=None,
+    )
+    assert kwargs["model"] == "chatgpt/gpt-5.3-codex"
+    assert "max_tokens" not in kwargs

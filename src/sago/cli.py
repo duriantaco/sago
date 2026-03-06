@@ -49,6 +49,8 @@ def _check_llm_configured() -> None:
     """Fail early if no LLM API key is available."""
     if config.llm_api_key:
         return
+    if config.is_chatgpt_subscription:
+        return
     provider_env = _PROVIDER_KEY_ENV_VARS.get(config.llm_provider, "")
     console.print(
         Panel(
@@ -749,6 +751,8 @@ _DEFAULT_JUDGE_PROMPT = (
 
 def _provider_for_model(model: str) -> str:
     """Infer provider name from a model string."""
+    if model.startswith("chatgpt/"):
+        return "chatgpt"
     if model.startswith("gemini/"):
         return "google"
     if model.startswith("mistral/"):

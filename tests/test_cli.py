@@ -3,9 +3,13 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from click.exceptions import Exit
+import pytest
 from typer.testing import CliRunner
 
+import sago.cli as cli
 from sago.cli import app
+from sago.core.config import Config
 
 runner = CliRunner()
 
@@ -92,3 +96,30 @@ def test_replan_no_plan(sago_project: Path) -> None:
         result = runner.invoke(app, ["replan", "--path", str(sago_project)])
     assert result.exit_code == 1
     assert "No PLAN.md found" in result.output
+
+
+def test_check_llm_configured_allows_chatgpt_without_api_key() -> None:
+    original = cli.config
+    try:
+        cli.config = Config(
+            llm_provider="chatgpt",
+            llm_model="chatgpt/gpt-5.3-codex",
+            llm_api_key="",
+        )
+        cli._check_llm_configured()
+    finally:
+        cli.config = original
+
+
+def test_check_llm_configured_requires_key_for_non_chatgpt() -> None:
+    original = cli.config
+    try:
+        cli.config = Config(
+            llm_provider="openai",
+            llm_model="gpt-4o",
+            llm_api_key="",
+        )
+        with pytest.raises(Exit):
+            cli._check_llm_configured()
+    finally:
+        cli.config = original

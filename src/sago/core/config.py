@@ -87,6 +87,13 @@ class Config(BaseSettings):
                 self.llm_api_key = value
         return self
 
+    @property
+    def is_chatgpt_subscription(self) -> bool:
+        """True when using LiteLLM ChatGPT subscription route (OAuth device flow)."""
+        return self.llm_provider.lower() == "chatgpt" or self.llm_model.lower().startswith(
+            "chatgpt/"
+        )
+
     planner_model: str | None = Field(
         default=None,
         description="Override model for the planner agent (falls back to llm_model)",
