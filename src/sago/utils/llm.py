@@ -66,6 +66,17 @@ class LLMClient:
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice or "auto"
+        return self._sanitize_provider_kwargs(kwargs)
+
+    def _is_chatgpt_subscription_model(self) -> bool:
+        """True for LiteLLM ChatGPT subscription route models."""
+        return self.model.lower().startswith("chatgpt/")
+
+    def _sanitize_provider_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Strip fields rejected by specific provider backends."""
+        if self._is_chatgpt_subscription_model():
+            for key in ("max_tokens", "max_output_tokens", "max_completion_tokens", "metadata"):
+                kwargs.pop(key, None)
         return kwargs
 
     @_RETRY_DECORATOR

@@ -65,6 +65,13 @@ LLM_API_KEY=sk-your-key-here
 
 Any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) works — OpenAI, Anthropic, Azure, Gemini, etc. The LLM is used for **plan generation only**.
 
+For ChatGPT subscription access via LiteLLM, use the ChatGPT route model (OAuth device flow, no API key required):
+
+```bash
+LLM_PROVIDER=chatgpt
+LLM_MODEL=chatgpt/gpt-5.3-codex
+```
+
 ### 3. Create a project
 
 ```bash
@@ -350,6 +357,14 @@ LOG_LEVEL=INFO
 ```
 
 Any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) works. Set `LLM_MODEL` to the provider's model identifier (e.g., `claude-sonnet-4-5-20250929`, `gpt-4o`, `gemini/gemini-2.0-flash`).
+
+ChatGPT subscription mode is also supported through LiteLLM:
+
+```bash
+LLM_PROVIDER=chatgpt
+LLM_MODEL=chatgpt/gpt-5.3-codex
+# No LLM_API_KEY required; LiteLLM handles OAuth device flow and token storage.
+```
 
 ---
 
