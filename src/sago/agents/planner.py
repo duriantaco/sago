@@ -5,7 +5,9 @@ from typing import Any
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
+from sago.models.plan import Plan
 from sago.utils.tracer import tracer
+from sago.validation import PlanValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,23 @@ Rules:
         project_context = self._load_project_context(project_path)
         plan_xml = await self._generate_plan_xml(project_context)
         plan_xml = self._sanitize_xml(plan_xml)
-        self._validate_plan(plan_xml)
+        self._validate_xml(plan_xml)
+
+        validation = self._validate_plan_semantics(plan_xml)
+        if not validation.valid:
+            self.logger.warning("Plan has validation errors, retrying with feedback")
+            error_feedback = self._format_validation_errors(validation)
+            plan_xml = await self._retry_with_feedback(plan_xml, error_feedback)
+            plan_xml = self._sanitize_xml(plan_xml)
+            self._validate_xml(plan_xml)
+            validation = self._validate_plan_semantics(plan_xml)
+            if not validation.valid:
+                error_msgs = "; ".join(i.message for i in validation.errors)
+                raise ValueError(f"Plan has validation errors after retry: {error_msgs}")
+
+        if validation.warnings:
+            for w in validation.warnings:
+                self.logger.warning(f"Plan warning: {w.message}")
 
         plan_path = project_path / "PLAN.md"
         self._save_plan(plan_path, plan_xml)
@@ -59,6 +77,7 @@ Rules:
                 "plan_length": len(plan_xml),
                 "num_phases": plan_xml.count("<phase"),
                 "num_tasks": plan_xml.count("<task"),
+                "validation_warnings": len(validation.warnings),
             },
         )
 
@@ -252,13 +271,12 @@ Generate a complete, executable plan now:""",
         xml_str = _re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", xml_str)
         return xml_str
 
-    def _validate_plan(self, plan_xml: str) -> None:
+    def _validate_xml(self, plan_xml: str) -> None:
+        """Validate basic XML structure."""
         if "<phases>" not in plan_xml or "</phases>" not in plan_xml:
             raise ValueError("Plan missing <phases> tags")
-
         if "<phase" not in plan_xml:
             raise ValueError("Plan has no phases")
-
         if "<task" not in plan_xml:
             raise ValueError("Plan has no tasks")
 
@@ -270,6 +288,46 @@ Generate a complete, executable plan now:""",
             raise ValueError(f"Invalid XML structure: {e}") from e
 
         self.logger.info("Plan XML validated successfully")
+
+    def _validate_plan_semantics(self, plan_xml: str) -> ValidationResult:
+        """Parse XML into Plan model and run semantic validation."""
+        phases = self.parser.parse_xml_tasks(plan_xml)
+        plan = Plan(phases=phases)
+        validator = PlanValidator()
+        return validator.validate(plan)
+
+    def _format_validation_errors(self, validation: ValidationResult) -> str:
+        """Format validation errors as feedback for LLM retry."""
+        lines = ["The generated plan has the following errors that must be fixed:"]
+        for issue in validation.errors:
+            loc = f" (task {issue.task_id})" if issue.task_id else ""
+            lines.append(f"  - {issue.code}{loc}: {issue.message}")
+        return "\n".join(lines)
+
+    async def _retry_with_feedback(
+        self, original_xml: str, error_feedback: str
+    ) -> str:
+        """Retry plan generation with error feedback."""
+        messages = [
+            {"role": "system", "content": self._build_system_prompt()},
+            {
+                "role": "user",
+                "content": (
+                    f"Your previous plan had validation errors. "
+                    f"Fix them and output a corrected <phases> XML block.\n\n"
+                    f"Previous plan:\n```xml\n{original_xml}\n```\n\n"
+                    f"{error_feedback}\n\n"
+                    f"Output the COMPLETE corrected <phases> XML block now:"
+                ),
+            },
+        ]
+        response = await self._call_llm(messages)
+        content: str = response["content"]
+        xml_start = content.find("<phases>")
+        xml_end = content.find("</phases>") + len("</phases>")
+        if xml_start == -1 or xml_end < len("</phases>"):
+            raise ValueError("Retry response does not contain valid XML structure")
+        return content[xml_start:xml_end]
 
     def _save_plan(self, plan_path: Path, plan_xml: str) -> None:
         content = f"""# PLAN.md
