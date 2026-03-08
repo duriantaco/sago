@@ -9,8 +9,9 @@ from sago.agents.planner import PlannerAgent
 from sago.agents.replanner import ReplannerAgent
 from sago.agents.reviewer import ReviewerAgent
 from sago.core.config import Config
-from sago.core.parser import MarkdownParser, Phase
+from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
+from sago.models import Phase
 from sago.utils.tracer import tracer
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,7 @@ class Orchestrator:
         feedback: str,
         review_context: str = "",
         repo_map: str = "",
+        execution_history: Any | None = None,
     ) -> WorkflowResult:
         """Run the replan workflow — update PLAN.md based on user feedback.
 
@@ -183,14 +185,15 @@ class Orchestrator:
             return (datetime.now() - start_time).total_seconds()
 
         try:
-            result = await self.replanner.execute(
-                {
-                    "project_path": project_path,
-                    "feedback": feedback,
-                    "review_context": review_context,
-                    "repo_map": repo_map,
-                }
-            )
+            context: dict[str, Any] = {
+                "project_path": project_path,
+                "feedback": feedback,
+                "review_context": review_context,
+                "repo_map": repo_map,
+            }
+            if execution_history is not None:
+                context["execution_history"] = execution_history
+            result = await self.replanner.execute(context)
 
             if not result.success:
                 raise ValueError(f"Replan failed: {result.error}")

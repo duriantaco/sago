@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from sago.core.parser import Phase, Task
+from sago.models import Phase, Task
 from sago.web.watcher import (
     ProjectWatcher,
     _is_ignored,

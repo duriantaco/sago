@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from sago.core.parser import MarkdownParser, Phase
+from sago.core.parser import MarkdownParser
+from sago.models.plan import Phase
 
 
 @dataclass

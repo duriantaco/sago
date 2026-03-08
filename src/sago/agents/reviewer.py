@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
-from sago.core.parser import Phase
+from sago.models import Phase
 from sago.utils.paths import safe_resolve
 from sago.utils.tracer import tracer
 
@@ -33,7 +33,7 @@ Rules:
                 status=AgentStatus.FAILURE,
                 output="",
                 error=str(e),
-                metadata={"phase_name": context.get("phase", Phase("", "", [])).name},
+                metadata={"phase_name": context.get("phase", Phase(name="", description="", tasks=[])).name},
             )
 
     async def _do_execute(self, context: dict[str, Any]) -> AgentResult:

@@ -396,7 +396,7 @@ async def test_replan_corrective_task_rule_in_prompt(
 @pytest.mark.asyncio
 async def test_orchestrator_run_review(tmp_path: Path) -> None:
     """Test the orchestrator's run_review method."""
-    from sago.core.parser import Phase, Task
+    from sago.models import Phase, Task
 
     (tmp_path / "PROJECT.md").write_text("# Test\nA test project.")
     (tmp_path / "REQUIREMENTS.md").write_text("# Requirements\n* [ ] **REQ-1:** Do stuff")

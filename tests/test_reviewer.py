@@ -8,7 +8,8 @@ import pytest
 
 from sago.agents.reviewer import ReviewerAgent
 from sago.core.config import Config
-from sago.core.parser import MarkdownParser, Phase, Task
+from sago.core.parser import MarkdownParser
+from sago.models import Phase, Task
 
 # ---------------------------------------------------------------------------
 # Fixtures

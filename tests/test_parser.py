@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from sago.core.parser import MarkdownParser, Phase, ResumePoint, Task
+from sago.core.parser import MarkdownParser
+from sago.models import Phase, ResumePoint, Task
 
 
 @pytest.fixture

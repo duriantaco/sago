@@ -10,8 +10,13 @@ from rich.table import Table
 
 from sago.agents.orchestrator import Orchestrator
 from sago.core.config import Config, find_dotenv
-from sago.core.parser import MarkdownParser, Phase
+from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
+from sago.models import Phase
+from sago.models.plan import Plan
+from sago.models.state import ProjectState, TaskState, TaskStatus
+from sago.recommendations import RecommendationEngine
+from sago.validation import PlanValidator
 
 app = typer.Typer(
     name="sago",
@@ -103,6 +108,67 @@ def _check_placeholder_content(project_path: Path) -> None:
     if not typer.confirm("Continue anyway?"):
         console.print("[dim]Edit your PROJECT.md and REQUIREMENTS.md, then re-run.[/dim]")
         raise typer.Exit(0)
+
+
+def _show_recommendations(phases: list[Phase], task_states: list[dict[str, str]]) -> None:
+    """Evaluate and display recommendations based on plan + state."""
+    plan = Plan(phases=phases)
+    state = ProjectState(
+        task_states=[
+            TaskState(task_id=ts["id"], status=TaskStatus(ts["status"]))
+            for ts in task_states
+        ]
+    )
+    engine = RecommendationEngine()
+    recs = engine.evaluate(plan, state)
+
+    if not recs:
+        return
+
+    style_map = {
+        "suggest_replan": "yellow",
+        "warn_repeated_failure": "red",
+        "warn_scope_drift": "red",
+        "suggest_review": "cyan",
+        "warn_invalid_verify": "yellow",
+        "warn_missing_tests": "yellow",
+        "phase_complete": "green",
+    }
+
+    console.print("\n[bold]Recommendations:[/bold]")
+    for rec in recs:
+        style = style_map.get(rec.type, "dim")
+        console.print(f"  [{style}]{rec.message}[/{style}]")
+
+
+def _show_validation_results(phases: list[Phase]) -> bool:
+    """Validate plan and display results. Returns True if plan is valid (no errors)."""
+    plan = Plan(phases=phases)
+    validator = PlanValidator()
+    result = validator.validate(plan)
+
+    if not result.issues:
+        console.print("[green]Validation: no issues found[/green]")
+        return True
+
+    style_map = {"error": "red", "warning": "yellow", "suggestion": "blue"}
+    console.print("\n[bold]Validation Results:[/bold]")
+    for issue in result.issues:
+        style = style_map.get(issue.severity, "dim")
+        label = issue.severity.upper()
+        loc = ""
+        if issue.task_id:
+            loc = f" (task {issue.task_id})"
+        elif issue.phase_name:
+            loc = f" ({issue.phase_name})"
+        console.print(f"  [{style}]{label}[/{style}]{loc}: {issue.message}")
+
+    error_count = len(result.errors)
+    warn_count = len(result.warnings)
+    sug_count = len(result.suggestions)
+    console.print(f"  {error_count} error(s), {warn_count} warning(s), {sug_count} suggestion(s)")
+
+    return result.valid
 
 
 def _do_init(
@@ -300,10 +366,24 @@ def _do_status(project_path: Path, detailed: bool) -> None:
     plan_file = project_path / "PLAN.md"
     if plan_file.exists():
         try:
-            phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
+            plan_content = plan_file.read_text(encoding="utf-8")
+            phases = parser.parse_xml_tasks(plan_content)
             if phases:
                 completed_tasks = _get_completed_task_ids(state_file)
                 _show_task_progress(phases, completed_tasks, detailed)
+
+                # Show recommendations
+                task_state_list: list[dict[str, str]] = []
+                if state_file.exists():
+                    state_content = state_file.read_text(encoding="utf-8")
+                    task_state_list = parser.parse_state_tasks(state_content, phases)
+                else:
+                    for phase in phases:
+                        for task in phase.tasks:
+                            task_state_list.append(
+                                {"id": task.id, "name": task.name, "status": "pending"}
+                            )
+                _show_recommendations(phases, task_state_list)
         except Exception as e:
             console.print(f"\n[yellow]Could not parse PLAN.md: {e}[/yellow]")
 
@@ -335,7 +415,7 @@ def status(
         raise typer.Exit(1) from None
 
 
-def _do_plan(project_path: Path, force: bool) -> None:
+def _do_plan(project_path: Path, force: bool, auto_accept: bool = False) -> None:
     _load_config(project_path)
     manager = ProjectManager(config)
 
@@ -347,10 +427,13 @@ def _do_plan(project_path: Path, force: bool) -> None:
     _check_llm_configured()
 
     plan_file = project_path / "PLAN.md"
-    if plan_file.exists() and not force:
-        console.print("[yellow]PLAN.md already exists[/yellow]")
-        if not typer.confirm("Overwrite?"):
-            raise typer.Exit(0)
+    old_plan_backup = None
+    if plan_file.exists():
+        if not force:
+            console.print("[yellow]PLAN.md already exists[/yellow]")
+            if not typer.confirm("Overwrite?"):
+                raise typer.Exit(0)
+        old_plan_backup = plan_file.read_text(encoding="utf-8")
 
     required_files = ["PROJECT.md", "REQUIREMENTS.md"]
     missing = [f for f in required_files if not (project_path / f).exists()]
@@ -381,6 +464,26 @@ def _do_plan(project_path: Path, force: bool) -> None:
 
         _show_plan_summary(project_path)
 
+        # Show validation results (approval gate)
+        parser = MarkdownParser()
+        try:
+            phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
+            _show_validation_results(phases)
+
+            if not auto_accept:
+                if not typer.confirm("\nAccept this plan?", default=True):
+                    if old_plan_backup is not None:
+                        plan_file.write_text(old_plan_backup, encoding="utf-8")
+                        console.print("[dim]Plan reverted to previous version.[/dim]")
+                    else:
+                        plan_file.unlink()
+                        console.print("[dim]Plan rejected and removed.[/dim]")
+                    raise typer.Exit(0)
+        except typer.Exit:
+            raise
+        except Exception as e:
+            console.print(f"[yellow]Could not validate plan: {e}[/yellow]")
+
         console.print("\n[bold]Next steps:[/bold]")
         console.print("   1. Review PLAN.md")
         console.print("   2. Point your coding agent at the project")
@@ -394,10 +497,11 @@ def _do_plan(project_path: Path, force: bool) -> None:
 def plan(
     project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing PLAN.md"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-accept plan without confirmation"),
 ) -> None:
     """Generate PLAN.md from requirements and project context."""
     try:
-        _do_plan(project_path, force)
+        _do_plan(project_path, force, auto_accept=yes)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from None
@@ -592,6 +696,9 @@ def _do_replan(
         else:
             console.print(f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]")
 
+    # Show recommendations before feedback prompt
+    _show_recommendations(old_phases, task_states)
+
     # Prompt for feedback (skip if provided via --feedback)
     if feedback is None:
         feedback = typer.prompt(
@@ -634,11 +741,12 @@ def _do_replan(
         console.print(f"[red]Replan failed: {result.error}[/red]")
         raise typer.Exit(1)
 
-    # Parse new plan and show diff
+    # Parse new plan and show diff + validation
     new_content = plan_file.read_text(encoding="utf-8")
     new_phases = parser.parse_xml_tasks(new_content)
 
     _show_plan_diff(old_phases, new_phases)
+    _show_validation_results(new_phases)
 
     if not auto_apply and not typer.confirm("\nApply changes?"):
         plan_file.write_text(old_plan_backup, encoding="utf-8")
@@ -879,6 +987,84 @@ def judge() -> None:
     """Configure the judge LLM for post-phase code reviews."""
     try:
         _do_judge()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from None
+
+
+def _do_lint_plan(project_path: Path, strict: bool, json_output: bool) -> None:
+    """Validate PLAN.md and display results."""
+    parser = MarkdownParser()
+    plan_file = project_path / "PLAN.md"
+
+    if not plan_file.exists():
+        console.print("[red]No PLAN.md found.[/red]")
+        console.print("[yellow]Run `sago plan` first[/yellow]")
+        raise typer.Exit(1)
+
+    content = plan_file.read_text(encoding="utf-8")
+
+    try:
+        phases = parser.parse_xml_tasks(content)
+    except ValueError as e:
+        console.print(f"[red]Failed to parse PLAN.md: {e}[/red]")
+        raise typer.Exit(1) from None
+
+    from sago.models.plan import Plan
+    from sago.validation import PlanValidator
+
+    plan = Plan(phases=phases)
+    validator = PlanValidator()
+    result = validator.validate(plan)
+
+    if json_output:
+        console.print(result.model_dump_json(indent=2))
+        raise typer.Exit(0 if result.valid else 1)
+
+    if not result.issues:
+        console.print("[green]Plan is valid. No issues found.[/green]")
+        raise typer.Exit(0)
+
+    style_map = {"error": "red", "warning": "yellow", "suggestion": "blue"}
+
+    for issue in result.issues:
+        style = style_map.get(issue.severity, "dim")
+        label = issue.severity.upper()
+        loc = ""
+        if issue.task_id:
+            loc = f" (task {issue.task_id})"
+        elif issue.phase_name:
+            loc = f" ({issue.phase_name})"
+        console.print(f"  [{style}]{label}[/{style}]{loc}: {issue.message}")
+
+    error_count = len(result.errors)
+    warn_count = len(result.warnings)
+    sug_count = len(result.suggestions)
+    console.print(
+        f"\n  {error_count} error(s), {warn_count} warning(s), {sug_count} suggestion(s)"
+    )
+
+    if not result.valid:
+        raise typer.Exit(1)
+
+    if strict and warn_count > 0:
+        console.print("[yellow]Strict mode: warnings treated as errors[/yellow]")
+        raise typer.Exit(1)
+
+    raise typer.Exit(0)
+
+
+@app.command(name="lint-plan")
+def lint_plan(
+    project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
+    strict: bool = typer.Option(False, "--strict", help="Treat warnings as errors"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON for CI integration"),
+) -> None:
+    """Validate PLAN.md for structural and semantic issues."""
+    try:
+        _do_lint_plan(project_path, strict, json_output)
+    except typer.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from None

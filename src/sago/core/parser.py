@@ -1,97 +1,10 @@
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
-@dataclass
-class Task:
-    id: str
-    name: str
-    files: list[str]
-    action: str
-    verify: str
-    done: str
-    phase_name: str = ""
-    depends_on: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "files": self.files,
-            "action": self.action,
-            "verify": self.verify,
-            "done": self.done,
-            "phase_name": self.phase_name,
-            "depends_on": self.depends_on,
-        }
-
-
-@dataclass
-class Phase:
-    name: str
-    description: str
-    tasks: list[Task]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "tasks": [task.to_dict() for task in self.tasks],
-        }
-
-
-@dataclass
-class Requirement:
-    id: str
-    description: str
-    completed: bool
-    version: str = "V1"
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert requirement to dictionary."""
-        return {
-            "id": self.id,
-            "description": self.description,
-            "completed": self.completed,
-            "version": self.version,
-        }
-
-
-@dataclass
-class Milestone:
-    id: str
-    phase: str
-    description: str
-    completed: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "phase": self.phase,
-            "description": self.description,
-            "completed": self.completed,
-        }
-
-
-@dataclass
-class ResumePoint:
-    last_completed: str
-    next_task: str
-    next_action: str
-    failure_reason: str
-    checkpoint: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "last_completed": self.last_completed,
-            "next_task": self.next_task,
-            "next_action": self.next_action,
-            "failure_reason": self.failure_reason,
-            "checkpoint": self.checkpoint,
-        }
+from sago.models.plan import Phase, Task
+from sago.models.state import Milestone, Requirement, ResumePoint
 
 
 class MarkdownParser:
