@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.2] - 2026-03-08
+
+### Added
+- **Pydantic models** — `src/sago/models/` replaces dataclasses in `core/parser.py` as the source of truth. `Plan`, `Phase`, `Task`, `ProjectState`, `TaskState`, `ExecutionHistory`, `VerifierResult`, `FailureCategory` — all Pydantic BaseModel with JSON/XML serialization and `to_dict()` backward compat
+- **`classify_failure()`** — deterministic regex-based failure categorization (24 patterns) maps stderr to `FailureCategory` enum (syntax_error, import_error, runtime_error, assertion_failure, environment_missing, timeout, unknown)
+- **`PlanValidator`** — semantic plan validation with 15 checks across 3 severity levels. Errors: duplicate IDs, missing IDs, invalid dependency refs, dependency cycles (Kahn's algorithm), empty action/files, backward cross-phase deps. Warnings: empty verify, missing done, broad tasks, duplicate files in phase, too many files. Suggestions: single-task phase, large phase, over-specified deps
+- **`sago lint-plan`** — CLI command to validate PLAN.md. `--strict` treats warnings as errors, `--json` outputs machine-readable results. Exit code 0/1 for CI integration
+- **Validation integrated into plan/replan** — after LLM generates XML, it's parsed into the Plan model and validated. On errors, retries once with error feedback to the LLM. Warnings logged
+- **`RecommendationEngine`** — 7 deterministic rules (no LLM): warn repeated failures, suggest replan when >30% tasks failed, phase complete notification, suggest review, warn invalid verify, warn missing tests, warn scope drift
+- **Recommendations in CLI** — shown after `sago status` task progress and before `sago replan` feedback prompt
+- **Approval gates** — `sago plan` shows validation results and prompts accept/reject before writing. `sago replan` shows validation alongside diff before confirmation. `--yes` skips prompts
+- **Structured execution history in replanner** — `ExecutionHistory` passed to replanner context includes failure category, stderr snippet, and attempt count per failed task, giving the LLM better context for replanning
+- **Tests** — 93 new tests: `test_models.py` (38), `test_validator.py` (34), `test_recommendations.py` (21), `test_validation_integration.py` (13). Total suite: 315 passed
+
+### Changed
+- **Parser migration** — `core/parser.py` dataclass definitions (Task, Phase, Requirement, Milestone, ResumePoint) removed; all consumers import from `sago.models`
+- **Agent imports** — `orchestrator.py`, `planner.py`, `replanner.py`, `reviewer.py`, `cli.py`, `watcher.py` all import models from `sago.models` instead of `sago.core.parser`
+
 ## [0.2.1] - 2026-03-01
 
 ### Added

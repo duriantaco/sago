@@ -98,6 +98,9 @@ Sago reads your `PROJECT.md` and `REQUIREMENTS.md`, detects your environment (Py
 - Task-level dependency ordering via `depends_on`
 - Verification commands for each task
 - A list of third-party packages needed
+- Semantic validation (duplicate IDs, dependency cycles, missing fields, etc.)
+
+Sago validates the plan automatically — if it finds structural errors (cycles, invalid dependencies, missing task IDs), it retries once with error feedback. You're shown validation results and asked to accept or reject before the plan is written.
 
 ### 5. Hand off to your coding agent
 
@@ -131,13 +134,14 @@ After your coding agent finishes a phase, run the phase gate:
 sago replan
 ```
 
-This reviews the completed work, shows findings (warnings, suggestions), saves the review to STATE.md, and optionally lets you adjust the plan before the next phase. Just press Enter to skip replanning if the review looks good.
+This reviews the completed work, shows findings (warnings, suggestions), saves the review to STATE.md, shows actionable recommendations (e.g. "task failed 2+ times — consider replanning"), and optionally lets you adjust the plan before the next phase. Just press Enter to skip replanning if the review looks good.
 
 ### 8. Track progress
 
 ```bash
-sago status              # quick summary
+sago status              # quick summary + recommendations
 sago status -d           # detailed per-task breakdown
+sago lint-plan           # validate plan without running anything
 ```
 
 ---
@@ -309,10 +313,14 @@ sago init [name]                     # quick scaffold with templates
 sago init [name] --prompt "desc"     # generate spec files from a prompt via LLM
 sago init -y                         # non-interactive, all defaults
 sago plan                            # generate PLAN.md from requirements
+sago plan --yes                      # auto-accept plan without confirmation
+sago lint-plan                       # validate PLAN.md for structural/semantic issues
+sago lint-plan --strict              # treat warnings as errors
+sago lint-plan --json                # machine-readable JSON output
 sago replan                          # phase gate: review completed work, optionally update plan
 sago watch                           # launch mission control dashboard
 sago watch --port 8080               # use a specific port
-sago status                          # show project progress
+sago status                          # show project progress + recommendations
 sago status -d                       # detailed per-task breakdown
 sago trace                           # open dashboard for the last trace
 sago trace --demo                    # open dashboard with sample data
@@ -323,6 +331,7 @@ sago trace --demo                    # open dashboard with sample data
 | Flag | What it does |
 |---|---|
 | `--force` / `-f` | Regenerate PLAN.md if it already exists |
+| `--yes` / `-y` | Auto-accept plan without confirmation prompt |
 | `--trace` | Open live dashboard during planning |
 
 ---
