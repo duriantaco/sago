@@ -72,9 +72,7 @@ class WatchHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def _serve_events(self, after: int) -> None:
-        events, total = _read_trace_events(
-            self.trace_path, after, allowed_dir=self.project_path
-        )
+        events, total = _read_trace_events(self.trace_path, after, allowed_dir=self.project_path)
 
         total_tasks = 0
         for evt in events:
@@ -115,9 +113,7 @@ def _read_trace_events(
         allowed_resolved = allowed_dir.resolve()
         is_inside = str(resolved).startswith(str(allowed_resolved) + "/")
         if not is_inside and resolved != allowed_resolved:
-            raise ValueError(
-                f"Trace path {trace_path} escapes allowed directory {allowed_dir}"
-            )
+            raise ValueError(f"Trace path {trace_path} escapes allowed directory {allowed_dir}")
 
     events: list[dict[str, Any]] = []
     total = 0

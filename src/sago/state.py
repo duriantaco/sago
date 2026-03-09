@@ -292,9 +292,7 @@ class StateManager:
         """Check if all tasks in a phase are done and mark complete if so."""
         result = CheckpointResult()
         if phase_task_ids and phase_name and status == TaskStatus.DONE:
-            all_done = all(
-                self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids
-            )
+            all_done = all(self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids)
             if all_done:
                 self.mark_phase_complete(phase_name)
                 result.phase_completed = True
@@ -327,9 +325,7 @@ class StateManager:
 
         # Update Current Context
         if phase_name:
-            content = self._update_current_context(
-                content, phase_name, next_task or "None"
-            )
+            content = self._update_current_context(content, phase_name, next_task or "None")
 
         # Update Resume Point
         failure_reason = notes if status == TaskStatus.FAILED else "None"

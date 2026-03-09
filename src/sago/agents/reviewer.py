@@ -72,9 +72,7 @@ Rules:
             },
         )
 
-    def _read_file_truncated(
-        self, path: Path, label: str, max_chars: int = 8000
-    ) -> str | None:
+    def _read_file_truncated(self, path: Path, label: str, max_chars: int = 8000) -> str | None:
         """Read a file and return its content truncated to max_chars, or None on failure."""
         if not path.exists():
             return None

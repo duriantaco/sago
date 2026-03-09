@@ -322,7 +322,8 @@ def _show_plan_summary(project_path: Path) -> list[str]:
 
 
 def _show_status_overview(
-    info: dict[str, Any], state: ProjectState | None,
+    info: dict[str, Any],
+    state: ProjectState | None,
 ) -> None:
     """Print project status header table."""
     console.print(Panel(f"[bold]{info['name']}[/bold]", title="Project Status"))
@@ -594,7 +595,8 @@ def _show_plan_diff(old_phases: list[Phase], new_phases: list[Phase]) -> None:
 
 
 def _show_replan_status(
-    task_states: list[TaskState], phase_statuses: list[dict[str, Any]],
+    task_states: list[TaskState],
+    phase_statuses: list[dict[str, Any]],
 ) -> None:
     """Print current plan status summary for replan."""
     done_count = sum(1 for ts in task_states if ts.status == TaskStatus.DONE)
@@ -752,7 +754,12 @@ def _do_replan(
 
     orchestrator = Orchestrator(config=config)
     review_outputs = _review_phases(
-        project_path, old_phases, phase_statuses, state_file, review_prompt, orchestrator,
+        project_path,
+        old_phases,
+        phase_statuses,
+        state_file,
+        review_prompt,
+        orchestrator,
     )
 
     _show_recommendations(old_phases, task_states)
@@ -771,8 +778,12 @@ def _do_replan(
         return
 
     _execute_replan(
-        project_path, old_phases, feedback, review_outputs,
-        orchestrator, auto_apply,
+        project_path,
+        old_phases,
+        feedback,
+        review_outputs,
+        orchestrator,
+        auto_apply,
     )
 
 
@@ -1089,14 +1100,12 @@ def lint_plan(
         raise typer.Exit(1) from None
 
 
-def _check_deps_met(
-    task: Task, phase: Phase, status_by_id: dict[str, TaskStatus]
-) -> bool:
+def _check_deps_met(task: Task, phase: Phase, status_by_id: dict[str, TaskStatus]) -> bool:
     """Return True if all dependencies (explicit or implicit) are satisfied."""
     if task.depends_on:
         return all(status_by_id.get(dep) == TaskStatus.DONE for dep in task.depends_on)
     # No explicit depends_on: depends on all prior tasks in phase
-    prior_ids = [t.id for t in phase.tasks[:phase.tasks.index(task)]]
+    prior_ids = [t.id for t in phase.tasks[: phase.tasks.index(task)]]
     return all(status_by_id.get(pid) == TaskStatus.DONE for pid in prior_ids)
 
 
@@ -1222,7 +1231,9 @@ class CheckpointParams:
 
 
 def _print_checkpoint_result(
-    params: CheckpointParams, task_name: str, cp_result: CheckpointResult,
+    params: CheckpointParams,
+    task_name: str,
+    cp_result: CheckpointResult,
 ) -> None:
     """Display checkpoint result to the user."""
     icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[params.status]
@@ -1272,7 +1283,9 @@ def _do_checkpoint(project_path: Path, params: CheckpointParams) -> None:
     parser = MarkdownParser()
     phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
     task_name, phase_name, phase_task_ids = _resolve_task_from_plan(
-        phases, params.task_id, params.phase,
+        phases,
+        params.task_id,
+        params.phase,
     )
 
     task_status = TaskStatus(params.status)
