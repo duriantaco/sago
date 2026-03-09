@@ -301,6 +301,6 @@ class TestJudgeConfig:
     def test_get_judge_api_key_keyring_error_falls_back(self) -> None:
         cfg = Config(llm_api_key="main-key", judge_api_key="env-judge-key")
         mock_keyring = MagicMock()
-        mock_keyring.get_password.side_effect = Exception("no backend")
+        mock_keyring.get_password.side_effect = RuntimeError("no backend")
         with patch.dict("sys.modules", {"keyring": mock_keyring}):
             assert cfg.get_judge_api_key() == "env-judge-key"

@@ -137,7 +137,8 @@ class GitIntegration:
             )
             return result.stdout.strip()
 
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.debug(f"Could not get current branch: {e}")
             return None
 
     def push_branch(self, branch_name: str | None = None) -> bool:
@@ -214,7 +215,8 @@ class GitIntegration:
             )
             return result.stdout
 
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            self.logger.debug(f"Could not get file diff: {e}")
             return None
 
     def undo_last_commit(self, keep_changes: bool = True) -> bool:

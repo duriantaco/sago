@@ -72,6 +72,21 @@ Rules:
             },
         )
 
+    def _read_file_truncated(
+        self, path: Path, label: str, max_chars: int = 8000
+    ) -> str | None:
+        """Read a file and return its content truncated to max_chars, or None on failure."""
+        if not path.exists():
+            return None
+        try:
+            content = path.read_text(encoding="utf-8")
+            if len(content) > max_chars:
+                content = content[:max_chars] + "\n... (truncated)"
+            return content
+        except (OSError, UnicodeDecodeError) as e:
+            self.logger.debug(f"Could not read {label}: {e}")
+            return None
+
     def _build_review_context(self, phase: Phase, project_path: Path) -> str:
         parts: list[str] = []
 
@@ -89,25 +104,17 @@ Rules:
         for task in phase.tasks:
             for file_path_str in task.files:
                 file_path = safe_resolve(project_path, file_path_str)
-                if file_path.exists():
-                    try:
-                        content = file_path.read_text(encoding="utf-8")
-                        if len(content) > 8000:
-                            content = content[:8000] + "\n... (truncated)"
-                        parts.append(f"\n--- {file_path_str} ---\n{content}")
-                    except (OSError, UnicodeDecodeError):
-                        parts.append(f"\n--- {file_path_str} --- (could not read)")
+                content = self._read_file_truncated(file_path, file_path_str)
+                if content is not None:
+                    parts.append(f"\n--- {file_path_str} ---\n{content}")
+                elif file_path.exists():
+                    parts.append(f"\n--- {file_path_str} --- (could not read)")
 
         for context_file in ["PROJECT.md", "REQUIREMENTS.md"]:
             ctx_path = project_path / context_file
-            if ctx_path.exists():
-                try:
-                    content = ctx_path.read_text(encoding="utf-8")
-                    if len(content) > 4000:
-                        content = content[:4000] + "\n... (truncated)"
-                    parts.append(f"\n=== {context_file} ===\n{content}")
-                except (OSError, UnicodeDecodeError):
-                    pass
+            content = self._read_file_truncated(ctx_path, context_file, max_chars=4000)
+            if content is not None:
+                parts.append(f"\n=== {context_file} ===\n{content}")
 
         return "\n".join(parts)
 

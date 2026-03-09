@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -9,6 +10,8 @@ from typing import Literal
 
 from sago.models.plan import Phase
 from sago.state import StateManager
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -154,21 +157,54 @@ def _load_gitignore_patterns(project_path: Path) -> list[str]:
     return patterns
 
 
-def _is_ignored(rel_path: str, ignore_patterns: list[str]) -> bool:
-    """Check if a relative path matches any ignore pattern."""
-    parts = rel_path.split(os.sep)
-    for pattern in ignore_patterns:
-        # Match against each path component
+@dataclass
+class _IgnoreFilter:
+    """Pre-processed ignore patterns split into literal names and glob patterns."""
+
+    literal_names: frozenset[str]
+    glob_patterns: tuple[str, ...]
+
+    @classmethod
+    def from_patterns(cls, patterns: list[str]) -> _IgnoreFilter:
+        literals: set[str] = set()
+        globs: list[str] = []
+        for p in patterns:
+            if any(ch in p for ch in ("*", "?", "[")):
+                globs.append(p)
+            else:
+                literals.add(p)
+        return cls(literal_names=frozenset(literals), glob_patterns=tuple(globs))
+
+    def is_ignored(self, rel_path: str) -> bool:
+        """Check if a relative path matches any ignore pattern."""
+        parts = rel_path.split(os.sep)
+        # O(1) lookup for literal names against each path component
         for part in parts:
-            if fnmatch.fnmatch(part, pattern):
+            if part in self.literal_names:
                 return True
-        # Also try matching the full relative path
-        if fnmatch.fnmatch(rel_path, pattern):
-            return True
-    return False
+        # Glob patterns still need fnmatch
+        for pattern in self.glob_patterns:
+            for part in parts:
+                if fnmatch.fnmatch(part, pattern):
+                    return True
+            if fnmatch.fnmatch(rel_path, pattern):
+                return True
+        return False
 
 
 _MD_FILES = ["PROJECT.md", "REQUIREMENTS.md", "PLAN.md", "STATE.md", "IMPORTANT.md"]
+
+
+@dataclass
+class _WatcherCache:
+    """Internal mutable state for ProjectWatcher, grouped to reduce field count."""
+
+    plan_files: set[str] = field(default_factory=set)
+    baseline_mtimes: dict[str, float] = field(default_factory=dict)
+    state_mtime: float = 0.0
+    cached_tasks: list[TaskStatus] = field(default_factory=list)
+    md_mtimes: dict[str, float] = field(default_factory=dict)
+    md_contents: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -177,25 +213,21 @@ class ProjectWatcher:
     plan_phases: list[Phase]
     interval: float = 1.0
 
-    _ignore_patterns: list[str] = field(default_factory=list, init=False)
-    _plan_files: set[str] = field(default_factory=set, init=False)
-    _baseline_mtimes: dict[str, float] = field(default_factory=dict, init=False)
-    _state_mtime: float = field(default=0.0, init=False)
-    _cached_tasks: list[TaskStatus] = field(default_factory=list, init=False)
-    _md_mtimes: dict[str, float] = field(default_factory=dict, init=False)
-    _md_contents: dict[str, str] = field(default_factory=dict, init=False)
+    _ignore: _IgnoreFilter = field(init=False)
+    _cache: _WatcherCache = field(default_factory=_WatcherCache, init=False)
 
     def __post_init__(self) -> None:
-        self._ignore_patterns = _DEFAULT_IGNORE + _load_gitignore_patterns(self.project_path)
+        raw_patterns = _DEFAULT_IGNORE + _load_gitignore_patterns(self.project_path)
+        self._ignore = _IgnoreFilter.from_patterns(raw_patterns)
 
         # Collect all files mentioned in plan tasks
         for phase in self.plan_phases:
             for task in phase.tasks:
                 for f in task.files:
-                    self._plan_files.add(f)
+                    self._cache.plan_files.add(f)
 
         # Take baseline snapshot of existing files
-        self._baseline_mtimes = self._get_file_mtimes()
+        self._cache.baseline_mtimes = self._get_file_mtimes()
 
     def poll(self) -> ProjectState:
         """Read STATE.md + scan files. Called by HTTP handler per request."""
@@ -238,23 +270,31 @@ class ProjectWatcher:
         """Read .md project files, using mtime cache to avoid unnecessary re-reads."""
         result: list[MdFileContent] = []
         for filename in _MD_FILES:
-            filepath = self.project_path / filename
-            if not filepath.exists():
-                continue
-            try:
-                mtime = os.stat(filepath).st_mtime
-            except OSError:
-                continue
-            if mtime != self._md_mtimes.get(filename):
-                try:
-                    content = filepath.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    continue
-                self._md_mtimes[filename] = mtime
-                self._md_contents[filename] = content
-            content = self._md_contents.get(filename, "")
-            result.append(MdFileContent(filename=filename, content=content, mtime=mtime))
+            md_entry = self._read_single_md(filename)
+            if md_entry is not None:
+                result.append(md_entry)
         return result
+
+    def _read_single_md(self, filename: str) -> MdFileContent | None:
+        """Read a single .md file, returning *None* if unavailable."""
+        filepath = self.project_path / filename
+        if not filepath.exists():
+            return None
+        try:
+            mtime = os.stat(filepath).st_mtime
+        except OSError as exc:
+            logger.debug("Cannot stat %s: %s", filepath, exc)
+            return None
+        if mtime != self._cache.md_mtimes.get(filename):
+            try:
+                content = filepath.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                logger.debug("Cannot read %s: %s", filepath, exc)
+                return None
+            self._cache.md_mtimes[filename] = mtime
+            self._cache.md_contents[filename] = content
+        content = self._cache.md_contents.get(filename, "")
+        return MdFileContent(filename=filename, content=content, mtime=mtime)
 
     def _parse_state(self) -> list[TaskStatus]:
         """Parse STATE.md for task completion markers [✓] and [✗]."""
@@ -270,11 +310,12 @@ class ProjectWatcher:
         # Check if STATE.md has been modified
         try:
             mtime = os.stat(state_file).st_mtime
-        except OSError:
+        except OSError as exc:
+            logger.debug("Cannot stat STATE.md, assuming stale: %s", exc)
             mtime = 0.0
 
-        if mtime != self._state_mtime or not self._cached_tasks:
-            self._state_mtime = mtime
+        if mtime != self._cache.state_mtime or not self._cache.cached_tasks:
+            self._cache.state_mtime = mtime
             state_mgr = StateManager(state_file)
             task_states = state_mgr.get_task_states(self.plan_phases)
 
@@ -284,7 +325,7 @@ class ProjectWatcher:
                 for t in p.tasks:
                     task_info[t.id] = (t.name, p.name)
 
-            self._cached_tasks = [
+            self._cache.cached_tasks = [
                 TaskStatus(
                     id=ts.task_id,
                     name=task_info.get(ts.task_id, (ts.task_id, ""))[0],
@@ -294,34 +335,54 @@ class ProjectWatcher:
                 for ts in task_states
             ]
 
-        return self._cached_tasks
+        return self._cache.cached_tasks
 
     def _get_file_mtimes(self) -> dict[str, float]:
         """Get mtimes for tracked files in the project directory."""
         result: dict[str, float] = {}
-        try:
-            for entry in os.scandir(self.project_path):
-                if entry.is_file():
-                    rel = entry.name
-                    if rel in _COMMON_ROOT_FILES or rel in self._plan_files:
-                        if not _is_ignored(rel, self._ignore_patterns):
-                            try:
-                                result[rel] = entry.stat().st_mtime
-                            except OSError:
-                                pass
-        except OSError:
-            pass
-
-        # Also scan subdirectories for plan files
-        for plan_file in self._plan_files:
-            if os.sep in plan_file or "/" in plan_file:
-                full = self.project_path / plan_file
-                try:
-                    result[plan_file] = os.stat(full).st_mtime
-                except OSError:
-                    pass
-
+        self._collect_root_file_mtimes(result)
+        self._collect_subdir_plan_file_mtimes(result)
         return result
+
+    def _collect_root_file_mtimes(self, result: dict[str, float]) -> None:
+        """Scan root directory entries and record mtimes for tracked files."""
+        try:
+            entries = list(os.scandir(self.project_path))
+        except OSError as exc:
+            logger.debug("Cannot scan project directory: %s", exc)
+            return
+
+        for entry in entries:
+            if not entry.is_file():
+                continue
+            rel = entry.name
+            if rel not in _COMMON_ROOT_FILES and rel not in self._cache.plan_files:
+                continue
+            if self._ignore.is_ignored(rel):
+                continue
+            try:
+                result[rel] = entry.stat().st_mtime
+            except OSError as exc:
+                logger.debug("Cannot stat root file %s: %s", rel, exc)
+
+    def _collect_subdir_plan_file_mtimes(self, result: dict[str, float]) -> None:
+        """Record mtimes for plan files that live in subdirectories."""
+        for plan_file in self._cache.plan_files:
+            if os.sep not in plan_file and "/" not in plan_file:
+                continue
+            full = self.project_path / plan_file
+            try:
+                result[plan_file] = os.stat(full).st_mtime
+            except OSError as exc:
+                logger.debug("Plan file not found %s: %s", plan_file, exc)
+
+    def _safe_file_size(self, rel_path: str) -> int:
+        """Return file size in bytes, defaulting to 0 on error."""
+        try:
+            return os.stat(self.project_path / rel_path).st_size
+        except OSError as exc:
+            logger.debug("Cannot stat file size for %s: %s", rel_path, exc)
+            return 0
 
     def _scan_files(self) -> list[FileChange]:
         """Scan project dir for new/changed files since baseline."""
@@ -329,20 +390,12 @@ class ProjectWatcher:
         changes: list[FileChange] = []
 
         for path, mtime in current.items():
-            baseline_mtime = self._baseline_mtimes.get(path)
+            baseline_mtime = self._cache.baseline_mtimes.get(path)
             if baseline_mtime is None:
-                # New file
-                try:
-                    size = os.stat(self.project_path / path).st_size
-                except OSError:
-                    size = 0
+                size = self._safe_file_size(path)
                 changes.append(FileChange(path=path, size=size, mtime=mtime, is_new=True))
             elif mtime > baseline_mtime:
-                # Modified file
-                try:
-                    size = os.stat(self.project_path / path).st_size
-                except OSError:
-                    size = 0
+                size = self._safe_file_size(path)
                 changes.append(FileChange(path=path, size=size, mtime=mtime, is_new=False))
 
         # Sort by mtime descending (most recent first)

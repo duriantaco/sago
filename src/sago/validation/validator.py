@@ -85,7 +85,6 @@ def check_verify_safety(verify_cmd: str) -> list[str]:
         if not tokens:
             continue
         first = tokens[0].lower()
-        # Check two-token commands like "pip install"
         two_token = f"{first} {tokens[1].lower()}" if len(tokens) > 1 else ""
         if first in DANGEROUS_COMMANDS or two_token in DANGEROUS_COMMANDS:
             warnings.append(f"dangerous command '{first}' in verify")
@@ -444,22 +443,20 @@ class PlanValidator:
         """Flag tasks that depend on all prior tasks (probably over-specified)."""
         issues = []
         all_tasks = plan.all_tasks()
+        # Build prior_ids incrementally to avoid O(N²) set rebuilding
+        prior_ids: set[str] = set()
         for i, task in enumerate(all_tasks):
-            if i < 2:
-                continue
-            prior_ids = {t.id for t in all_tasks[:i]}
-            if (
-                len(task.depends_on) >= len(prior_ids)
-                and prior_ids
-                and prior_ids.issubset(set(task.depends_on))
-            ):
-                issues.append(
-                    ValidationIssue(
-                        severity=Severity.SUGGESTION,
-                        code="OVER_SPECIFIED_DEPS",
-                        message=f"Task '{task.id}' depends on all prior tasks — probably over-specified",
-                        task_id=task.id,
-                        phase_name=task.phase_name,
+            if i >= 2 and prior_ids:
+                deps_set = set(task.depends_on)
+                if len(deps_set) >= len(prior_ids) and prior_ids.issubset(deps_set):
+                    issues.append(
+                        ValidationIssue(
+                            severity=Severity.SUGGESTION,
+                            code="OVER_SPECIFIED_DEPS",
+                            message=f"Task '{task.id}' depends on all prior tasks — probably over-specified",
+                            task_id=task.id,
+                            phase_name=task.phase_name,
+                        )
                     )
-                )
+            prior_ids.add(task.id)
         return issues

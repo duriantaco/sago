@@ -59,43 +59,36 @@ class StateManager:
             return TaskStatus.SKIPPED
         return TaskStatus.PENDING
 
+    @staticmethod
+    def _parse_status_ids(content: str) -> dict[str, TaskStatus]:
+        """Parse STATE.md content and return a mapping of task ID to status."""
+        status_map: dict[str, TaskStatus] = {}
+        markers = {
+            "✓": TaskStatus.DONE,
+            "✗": TaskStatus.FAILED,
+            "⊘": TaskStatus.SKIPPED,
+        }
+        for line in content.split("\n"):
+            line = line.strip()
+            m = re.match(r"\[([✓✗⊘])\]\s+(\d+\.\d+):", line)
+            if m:
+                status_map[m.group(2)] = markers[m.group(1)]
+        return status_map
+
     def get_task_states(self, plan_phases: list[Phase]) -> list[TaskState]:
         """Parse STATE.md and return status for every task in the plan.
 
         Tasks not mentioned in STATE.md default to PENDING.
         """
-        content = self._read()
-        done_ids: set[str] = set()
-        failed_ids: set[str] = set()
-        skipped_ids: set[str] = set()
-
-        for line in content.split("\n"):
-            line = line.strip()
-            m = re.match(r"\[✓\]\s+(\d+\.\d+):", line)
-            if m:
-                done_ids.add(m.group(1))
-                continue
-            m = re.match(r"\[✗\]\s+(\d+\.\d+):", line)
-            if m:
-                failed_ids.add(m.group(1))
-                continue
-            m = re.match(r"\[⊘\]\s+(\d+\.\d+):", line)
-            if m:
-                skipped_ids.add(m.group(1))
-
-        results: list[TaskState] = []
-        for phase in plan_phases:
-            for task in phase.tasks:
-                if task.id in done_ids:
-                    status = TaskStatus.DONE
-                elif task.id in failed_ids:
-                    status = TaskStatus.FAILED
-                elif task.id in skipped_ids:
-                    status = TaskStatus.SKIPPED
-                else:
-                    status = TaskStatus.PENDING
-                results.append(TaskState(task_id=task.id, status=status))
-        return results
+        status_map = self._parse_status_ids(self._read())
+        return [
+            TaskState(
+                task_id=task.id,
+                status=status_map.get(task.id, TaskStatus.PENDING),
+            )
+            for phase in plan_phases
+            for task in phase.tasks
+        ]
 
     def completed_task_ids(self) -> list[str]:
         """Return list of completed (done) task IDs from STATE.md."""

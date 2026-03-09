@@ -184,32 +184,21 @@ class Orchestrator:
         def _elapsed() -> float:
             return (datetime.now() - start_time).total_seconds()
 
-        try:
-            context: dict[str, Any] = {
-                "project_path": project_path,
-                "feedback": feedback,
-                "review_context": review_context,
-                "repo_map": repo_map,
-            }
-            if execution_history is not None:
-                context["execution_history"] = execution_history
-            result = await self.replanner.execute(context)
+        context: dict[str, Any] = {
+            "project_path": project_path,
+            "feedback": feedback,
+            "review_context": review_context,
+            "repo_map": repo_map,
+        }
+        if execution_history is not None:
+            context["execution_history"] = execution_history
 
+        try:
+            result = await self.replanner.execute(context)
             if not result.success:
                 raise ValueError(f"Replan failed: {result.error}")
-
             phases = self._load_plan_phases(project_path)
             all_tasks = [task for phase in phases for task in phase.tasks]
-
-            return WorkflowResult(
-                success=True,
-                total_tasks=len(all_tasks),
-                completed_tasks=0,
-                failed_tasks=0,
-                skipped_tasks=len(all_tasks),
-                total_duration=_elapsed(),
-            )
-
         except ValueError as e:
             tracer.emit("error", "Orchestrator", {"error_type": "replan", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
@@ -219,6 +208,15 @@ class Orchestrator:
             return _failed_workflow(_elapsed(), str(e))
         finally:
             tracer.close()
+
+        return WorkflowResult(
+            success=True,
+            total_tasks=len(all_tasks),
+            completed_tasks=0,
+            failed_tasks=0,
+            skipped_tasks=len(all_tasks),
+            total_duration=_elapsed(),
+        )
 
     def _load_plan_phases(self, project_path: Path) -> list[Phase]:
         """Load phases from an existing PLAN.md (no generation)."""

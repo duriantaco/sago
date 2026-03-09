@@ -143,7 +143,8 @@ Rules:
 
         return context
 
-    async def _generate_plan_xml(self, project_context: dict[str, str]) -> str:
+    def _build_plan_user_prompt(self, project_context: dict[str, str]) -> str:
+        """Build the user prompt for plan generation."""
         context_str = "\n\n".join(
             [f"=== {name} ===\n{content}" for name, content in project_context.items() if content]
         )
@@ -153,14 +154,7 @@ Rules:
         env = detect_environment()
         pyproject_example = PYPROJECT_TEMPLATE.replace("{python_version}", env["python_version"])
 
-        messages = [
-            {
-                "role": "system",
-                "content": self._build_system_prompt(),
-            },
-            {
-                "role": "user",
-                "content": f"""Based on the project context below, generate a detailed PLAN.md with atomic tasks.
+        return f"""Based on the project context below, generate a detailed PLAN.md with atomic tasks.
 
 Project Context:
 {context_str}
@@ -248,7 +242,17 @@ Example Structure:
 </phases>
 ```
 
-Generate a complete, executable plan now:""",
+Generate a complete, executable plan now:"""
+
+    async def _generate_plan_xml(self, project_context: dict[str, str]) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": self._build_system_prompt(),
+            },
+            {
+                "role": "user",
+                "content": self._build_plan_user_prompt(project_context),
             },
         ]
 

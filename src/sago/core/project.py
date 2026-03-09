@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -62,16 +63,22 @@ class ProjectManager:
         template_vars = template_vars or {}
         template_vars.setdefault("project_name", project_name)
 
+        # Pre-build regex pattern for all template vars to avoid O(N*M) replacements
+        if template_vars:
+            replacements = {f"{{{{{key}}}}}": str(value) for key, value in template_vars.items()}
+            pattern = re.compile("|".join(re.escape(k) for k in replacements))
+        else:
+            replacements = {}
+            pattern = None
+
         for template_file in self.TEMPLATE_FILES:
             src = templates_dir / template_file
             dst = project_path / template_file
 
             if src.exists():
                 content = src.read_text(encoding="utf-8")
-                for key, value in template_vars.items():
-                    placeholder = f"{{{{{key}}}}}"
-                    content = content.replace(placeholder, str(value))
-
+                if pattern is not None:
+                    content = pattern.sub(lambda m: replacements[m.group(0)], content)
                 dst.write_text(content, encoding="utf-8")
 
     async def generate_from_prompt(

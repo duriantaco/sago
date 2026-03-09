@@ -157,42 +157,44 @@ Please provide output in the following format:
             LLM response dictionary
         """
         agent_name = self.__class__.__name__
+        self.logger.info(f"Calling LLM with {len(messages)} messages")
+        start = time.monotonic()
+
         try:
-            self.logger.info(f"Calling LLM with {len(messages)} messages")
-            start = time.monotonic()
             response = await self.llm.achat_completion(messages, **kwargs)
-            duration_s = time.monotonic() - start
-            usage = response.get("usage", {})
-            self.logger.info(
-                f"LLM response: prompt={usage.get('prompt_tokens', 0)}, "
-                f"completion={usage.get('completion_tokens', 0)}, "
-                f"total={usage.get('total_tokens', 0)} tokens"
-            )
-            prompt_preview = ""
-            for m in reversed(messages):
-                if m.get("role") == "user":
-                    prompt_preview = (m.get("content") or "")[:3000]
-                    break
-            response_preview = (response.get("content") or "")[:5000]
-            tracer.emit(
-                "llm_call",
-                agent_name,
-                {
-                    "model": self.config.llm_model,
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                    "duration_s": round(duration_s, 3),
-                    "prompt_preview": prompt_preview,
-                    "response_preview": response_preview,
-                },
-                duration_ms=round(duration_s * 1000, 2),
-            )
-            return response
         except Exception as e:
             self.logger.error(f"LLM call failed: {e}")
             tracer.emit("error", agent_name, {"error_type": "llm_call", "message": str(e)})
             raise
+
+        duration_s = time.monotonic() - start
+        usage = response.get("usage", {})
+        self.logger.info(
+            f"LLM response: prompt={usage.get('prompt_tokens', 0)}, "
+            f"completion={usage.get('completion_tokens', 0)}, "
+            f"total={usage.get('total_tokens', 0)} tokens"
+        )
+        prompt_preview = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                prompt_preview = (m.get("content") or "")[:3000]
+                break
+        response_preview = (response.get("content") or "")[:5000]
+        tracer.emit(
+            "llm_call",
+            agent_name,
+            {
+                "model": self.config.llm_model,
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+                "duration_s": round(duration_s, 3),
+                "prompt_preview": prompt_preview,
+                "response_preview": response_preview,
+            },
+            duration_ms=round(duration_s * 1000, 2),
+        )
+        return response
 
     def _create_result(
         self,

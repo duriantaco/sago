@@ -72,26 +72,9 @@ class WatchHandler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def _serve_events(self, after: int) -> None:
-        events: list[dict[str, Any]] = []
-        total = 0
-
-        try:
-            if self.trace_path.exists():
-                with open(self.trace_path, encoding="utf-8") as f:
-                    for i, line in enumerate(f):
-                        total = i + 1
-                        if i < after:
-                            continue
-                        if len(events) >= _MAX_EVENTS_PER_REQUEST:
-                            break
-                        line = line.strip()
-                        if line:
-                            try:
-                                events.append(json.loads(line))
-                            except json.JSONDecodeError:
-                                pass
-        except Exception as exc:
-            logger.warning("Error reading trace file: %s", exc)
+        events, total = _read_trace_events(
+            self.trace_path, after, allowed_dir=self.project_path
+        )
 
         total_tasks = 0
         for evt in events:
@@ -112,19 +95,70 @@ class WatchHandler(BaseHTTPRequestHandler):
     def _cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
 
-    def log_message(self, format: str, *args: Any) -> None:
-        pass
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+        """Suppress default stderr logging from BaseHTTPRequestHandler."""
+
+
+def _read_trace_events(
+    trace_path: Path, after: int, *, allowed_dir: Path | None = None
+) -> tuple[list[dict[str, Any]], int]:
+    """Read JSONL trace events from *trace_path*, skipping the first *after* lines.
+
+    Returns ``(events, total_line_count)``.  Malformed JSON lines are silently
+    skipped and I/O errors are logged but do not propagate.
+
+    If *allowed_dir* is given, *trace_path* must resolve to a location inside
+    that directory; otherwise a ``ValueError`` is raised (path-traversal guard).
+    """
+    resolved = trace_path.resolve()
+    if allowed_dir is not None:
+        allowed_resolved = allowed_dir.resolve()
+        is_inside = str(resolved).startswith(str(allowed_resolved) + "/")
+        if not is_inside and resolved != allowed_resolved:
+            raise ValueError(
+                f"Trace path {trace_path} escapes allowed directory {allowed_dir}"
+            )
+
+    events: list[dict[str, Any]] = []
+    total = 0
+    if not resolved.exists():
+        return events, total
+
+    with open(resolved, encoding="utf-8") as f:  # noqa: SKY-D215 — path validated above
+        for i, raw_line in enumerate(f):
+            total = i + 1
+            if i < after:
+                continue
+            if len(events) >= _MAX_EVENTS_PER_REQUEST:
+                break
+            stripped = raw_line.strip()
+            if stripped:
+                evt = _parse_json_line(stripped)
+                if evt is not None:
+                    events.append(evt)
+
+    return events, total
+
+
+def _parse_json_line(line: str) -> dict[str, Any] | None:
+    """Return parsed JSON dict or *None* for malformed lines."""
+    try:
+        return json.loads(line)  # type: ignore[no-any-return]
+    except json.JSONDecodeError as exc:
+        logger.debug("Skipping malformed trace line: %s", exc)
+        return None
 
 
 def _task_index(evt: dict[str, Any]) -> int:
     task_id = evt.get("data", {}).get("task_id", "")
     parts = str(task_id).split(".")
-    if len(parts) >= 2:
-        try:
-            return int(parts[-1])
-        except ValueError:
-            pass
-    return 0
+    if len(parts) < 2:
+        return 0
+    try:
+        return int(parts[-1])
+    except ValueError:
+        logger.debug("Non-numeric task index in task_id %r", task_id)
+        return 0
 
 
 def _make_handler(

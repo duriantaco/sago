@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -320,31 +321,11 @@ def _show_plan_summary(project_path: Path) -> list[str]:
     return dependencies
 
 
-def _do_status(project_path: Path, detailed: bool) -> None:
-    _load_config(project_path)
-    manager = ProjectManager(config)
-    parser = MarkdownParser()
-
-    if not manager.is_sago_project(project_path):
-        console.print(f"[red]Not a sago project: {project_path}[/red]")
-        raise typer.Exit(1)
-
-    info = manager.get_project_info(project_path)
-    state_mgr = StateManager(project_path / "STATE.md")
-
-    # We need plan phases for full state parsing
-    plan_file = project_path / "PLAN.md"
-    phases: list[Phase] = []
-    if plan_file.exists():
-        try:
-            phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
-        except Exception as e:
-            console.print(f"\n[yellow]Could not parse PLAN.md: {e}[/yellow]")
-
-    state = state_mgr.get_project_state(phases) if phases else None
-
+def _show_status_overview(
+    info: dict[str, Any], state: ProjectState | None,
+) -> None:
+    """Print project status header table."""
     console.print(Panel(f"[bold]{info['name']}[/bold]", title="Project Status"))
-
     table = Table(show_header=False)
     table.add_row(
         "[cyan]Active Phase[/cyan]",
@@ -357,16 +338,61 @@ def _do_status(project_path: Path, detailed: bool) -> None:
     table.add_row("[cyan]Path[/cyan]", str(info["path"]))
     console.print(table)
 
-    if state and state.resume_point is not None:
-        rp = state.resume_point
-        rp_table = Table(title="Resume Point", show_header=False)
-        rp_table.add_row("[green]Last Completed[/green]", rp.last_completed)
-        rp_table.add_row("[yellow]Next Task[/yellow]", rp.next_task)
-        rp_table.add_row("[yellow]Next Action[/yellow]", rp.next_action)
-        if rp.failure_reason != "None":
-            rp_table.add_row("[red]Failure Reason[/red]", rp.failure_reason)
-        rp_table.add_row("[cyan]Checkpoint[/cyan]", rp.checkpoint)
-        console.print(rp_table)
+
+def _show_resume_point(state: ProjectState) -> None:
+    """Print resume point table if one exists."""
+    if state.resume_point is None:
+        return
+    rp = state.resume_point
+    rp_table = Table(title="Resume Point", show_header=False)
+    rp_table.add_row("[green]Last Completed[/green]", rp.last_completed)
+    rp_table.add_row("[yellow]Next Task[/yellow]", rp.next_task)
+    rp_table.add_row("[yellow]Next Action[/yellow]", rp.next_action)
+    if rp.failure_reason != "None":
+        rp_table.add_row("[red]Failure Reason[/red]", rp.failure_reason)
+    rp_table.add_row("[cyan]Checkpoint[/cyan]", rp.checkpoint)
+    console.print(rp_table)
+
+
+def _show_status_next_steps(has_plan: bool) -> None:
+    """Print next-steps guidance based on whether a plan exists."""
+    if has_plan:
+        console.print("\n[bold]Next steps:[/bold]")
+        console.print("   Point your coding agent at this project")
+        console.print("   Claude Code reads CLAUDE.md automatically")
+        console.print("   sago status -d   - Detailed task status")
+    else:
+        console.print("\n[bold]Next Steps:[/bold]")
+        console.print("   1. Edit REQUIREMENTS.md")
+        console.print("   2. Run: sago plan")
+
+
+def _do_status(project_path: Path, detailed: bool) -> None:
+    _load_config(project_path)
+    manager = ProjectManager(config)
+    parser = MarkdownParser()
+
+    if not manager.is_sago_project(project_path):
+        console.print(f"[red]Not a sago project: {project_path}[/red]")
+        raise typer.Exit(1)
+
+    info = manager.get_project_info(project_path)
+    state_mgr = StateManager(project_path / "STATE.md")
+
+    plan_file = project_path / "PLAN.md"
+    phases: list[Phase] = []
+    if plan_file.exists():
+        try:
+            phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            console.print(f"\n[yellow]Could not parse PLAN.md: {e}[/yellow]")
+
+    state = state_mgr.get_project_state(phases) if phases else None
+
+    _show_status_overview(info, state)
+
+    if state:
+        _show_resume_point(state)
 
     if phases and state:
         _show_task_progress(phases, state.task_states, detailed)
@@ -377,15 +403,7 @@ def _do_status(project_path: Path, detailed: bool) -> None:
         for blocker in state.blockers:
             console.print(f"  - {blocker}")
 
-    if plan_file.exists():
-        console.print("\n[bold]Next steps:[/bold]")
-        console.print("   Point your coding agent at this project")
-        console.print("   Claude Code reads CLAUDE.md automatically")
-        console.print("   sago status -d   - Detailed task status")
-    else:
-        console.print("\n[bold]Next Steps:[/bold]")
-        console.print("   1. Edit REQUIREMENTS.md")
-        console.print("   2. Run: sago plan")
+    _show_status_next_steps(plan_file.exists())
 
 
 @app.command()
@@ -398,6 +416,19 @@ def status(
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from None
+
+
+def _prompt_plan_acceptance(plan_file: Path, old_plan_backup: str | None) -> None:
+    """Prompt user to accept/reject a generated plan. Raises typer.Exit on rejection."""
+    if typer.confirm("\nAccept this plan?", default=True):
+        return
+    if old_plan_backup is not None:
+        plan_file.write_text(old_plan_backup, encoding="utf-8")
+        console.print("[dim]Plan reverted to previous version.[/dim]")
+    else:
+        plan_file.unlink()
+        console.print("[dim]Plan rejected and removed.[/dim]")
+    raise typer.Exit(0)
 
 
 def _do_plan(project_path: Path, force: bool, auto_accept: bool = False) -> None:
@@ -456,14 +487,7 @@ def _do_plan(project_path: Path, force: bool, auto_accept: bool = False) -> None
             _show_validation_results(phases)
 
             if not auto_accept:
-                if not typer.confirm("\nAccept this plan?", default=True):
-                    if old_plan_backup is not None:
-                        plan_file.write_text(old_plan_backup, encoding="utf-8")
-                        console.print("[dim]Plan reverted to previous version.[/dim]")
-                    else:
-                        plan_file.unlink()
-                        console.print("[dim]Plan rejected and removed.[/dim]")
-                    raise typer.Exit(0)
+                _prompt_plan_acceptance(plan_file, old_plan_backup)
         except typer.Exit:
             raise
         except Exception as e:
@@ -569,43 +593,14 @@ def _show_plan_diff(old_phases: list[Phase], new_phases: list[Phase]) -> None:
             console.print(f"  [red]- {tid}: {old_tasks_by_id[tid].name}[/red]")
 
 
-def _do_replan(
-    project_path: Path,
-    feedback: str | None = None,
-    auto_apply: bool = False,
+def _show_replan_status(
+    task_states: list[TaskState], phase_statuses: list[dict[str, Any]],
 ) -> None:
-    _load_config(project_path)
-    manager = ProjectManager(config)
-    parser = MarkdownParser()
-
-    if not manager.is_sago_project(project_path):
-        console.print(f"[red]Not a sago project: {project_path}[/red]")
-        console.print("[yellow]Run 'sago init' first[/yellow]")
-        raise typer.Exit(1)
-
-    _check_llm_configured()
-
-    plan_file = project_path / "PLAN.md"
-    if not plan_file.exists():
-        console.print("[red]No PLAN.md found.[/red]")
-        console.print("[yellow]Run `sago plan` first[/yellow]")
-        raise typer.Exit(1)
-
-    plan_content = plan_file.read_text(encoding="utf-8")
-    old_phases = parser.parse_xml_tasks(plan_content)
-
-    # Parse STATE.md for current status via StateManager
-    state_file = project_path / "STATE.md"
-    state_mgr = StateManager(state_file)
-    task_states = state_mgr.get_task_states(old_phases)
-
+    """Print current plan status summary for replan."""
     done_count = sum(1 for ts in task_states if ts.status == TaskStatus.DONE)
     failed_count = sum(1 for ts in task_states if ts.status == TaskStatus.FAILED)
     pending_count = sum(1 for ts in task_states if ts.status == TaskStatus.PENDING)
     total = done_count + failed_count + pending_count
-
-    # Show per-phase breakdown
-    phase_statuses = _get_phase_status(old_phases, task_states)
 
     console.print(
         f"\n[bold]Current plan:[/bold] {total} tasks — "
@@ -623,18 +618,18 @@ def _do_replan(
             icon = "[dim]..[/dim]"
         console.print(f"   {icon} {ps['name']} ({ps['done']}/{ps['total']} done)")
 
-    # Review completed/partial phases that haven't been reviewed yet
-    review_prompt = parser.parse_review_prompt(plan_content)
-    if not review_prompt:
-        review_prompt = (
-            "Review each completed task for: code correctness, adherence to requirements, "
-            "edge-case handling, security issues, and consistency with the project style."
-        )
 
-    orchestrator = Orchestrator(config=config)
-    review_outputs: list[str] = []
-
+def _review_phases(
+    project_path: Path,
+    old_phases: list[Phase],
+    phase_statuses: list[dict[str, Any]],
+    state_file: Path,
+    review_prompt: str,
+    orchestrator: Orchestrator,
+) -> list[str]:
+    """Review completed/partial phases that haven't been reviewed yet. Returns review outputs."""
     existing_state = state_file.read_text(encoding="utf-8") if state_file.exists() else ""
+    review_outputs: list[str] = []
 
     for i, ps in enumerate(phase_statuses):
         if ps["status"] == "pending":
@@ -662,30 +657,24 @@ def _do_replan(
         else:
             console.print(f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]")
 
-    # Show recommendations before feedback prompt
-    _show_recommendations(old_phases, task_states)
+    return review_outputs
 
-    # Prompt for feedback (skip if provided via --feedback)
-    if feedback is None:
-        feedback = typer.prompt(
-            "\nWhat do you want to change? (Enter to skip)",
-            default="",
-        )
 
-    if not feedback:
-        if review_outputs:
-            console.print("[green]Phase review saved to STATE.md. No plan changes.[/green]")
-        else:
-            console.print("[dim]No changes.[/dim]")
-        return
-
-    # Full replan with review context + repo map
-    combined_review = "\n\n".join(review_outputs) if review_outputs else ""
-
+def _execute_replan(
+    project_path: Path,
+    old_phases: list[Phase],
+    feedback: str,
+    review_outputs: list[str],
+    orchestrator: Orchestrator,
+    auto_apply: bool,
+) -> None:
+    """Run the replan workflow, show diff, and prompt for confirmation."""
     from sago.utils.repo_map import generate_repo_map
 
+    plan_file = project_path / "PLAN.md"
+    parser = MarkdownParser()
+    combined_review = "\n\n".join(review_outputs) if review_outputs else ""
     repo_map = generate_repo_map(project_path)
-
     old_plan_backup = plan_file.read_text(encoding="utf-8")
 
     with Progress(
@@ -707,7 +696,6 @@ def _do_replan(
         console.print(f"[red]Replan failed: {result.error}[/red]")
         raise typer.Exit(1)
 
-    # Parse new plan and show diff + validation
     new_content = plan_file.read_text(encoding="utf-8")
     new_phases = parser.parse_xml_tasks(new_content)
 
@@ -721,6 +709,71 @@ def _do_replan(
 
     console.print("\n[green]Plan updated successfully![/green]")
     _show_plan_summary(project_path)
+
+
+def _do_replan(
+    project_path: Path,
+    feedback: str | None = None,
+    auto_apply: bool = False,
+) -> None:
+    _load_config(project_path)
+    manager = ProjectManager(config)
+    parser = MarkdownParser()
+
+    if not manager.is_sago_project(project_path):
+        console.print(f"[red]Not a sago project: {project_path}[/red]")
+        console.print("[yellow]Run 'sago init' first[/yellow]")
+        raise typer.Exit(1)
+
+    _check_llm_configured()
+
+    plan_file = project_path / "PLAN.md"
+    if not plan_file.exists():
+        console.print("[red]No PLAN.md found.[/red]")
+        console.print("[yellow]Run `sago plan` first[/yellow]")
+        raise typer.Exit(1)
+
+    plan_content = plan_file.read_text(encoding="utf-8")
+    old_phases = parser.parse_xml_tasks(plan_content)
+
+    state_file = project_path / "STATE.md"
+    state_mgr = StateManager(state_file)
+    task_states = state_mgr.get_task_states(old_phases)
+
+    phase_statuses = _get_phase_status(old_phases, task_states)
+    _show_replan_status(task_states, phase_statuses)
+
+    review_prompt = parser.parse_review_prompt(plan_content)
+    if not review_prompt:
+        review_prompt = (
+            "Review each completed task for: code correctness, adherence to requirements, "
+            "edge-case handling, security issues, and consistency with the project style."
+        )
+
+    orchestrator = Orchestrator(config=config)
+    review_outputs = _review_phases(
+        project_path, old_phases, phase_statuses, state_file, review_prompt, orchestrator,
+    )
+
+    _show_recommendations(old_phases, task_states)
+
+    if feedback is None:
+        feedback = typer.prompt(
+            "\nWhat do you want to change? (Enter to skip)",
+            default="",
+        )
+
+    if not feedback:
+        if review_outputs:
+            console.print("[green]Phase review saved to STATE.md. No plan changes.[/green]")
+        else:
+            console.print("[dim]No changes.[/dim]")
+        return
+
+    _execute_replan(
+        project_path, old_phases, feedback, review_outputs,
+        orchestrator, auto_apply,
+    )
 
 
 @app.command()
@@ -1154,22 +1207,34 @@ def _resolve_task_from_plan(
     raise typer.Exit(1)
 
 
+@dataclass
+class CheckpointParams:
+    """Grouped parameters for the checkpoint command."""
+
+    task_id: str
+    status: str = "done"
+    notes: str = ""
+    next_task: str = ""
+    next_action: str = ""
+    decisions: list[str] = field(default_factory=list)
+    phase: str = ""
+    git_tag: bool = True
+
+
 def _print_checkpoint_result(
-    task_id: str, task_name: str, status: str,
-    notes: str, decisions: list[str], next_task: str,
-    cp_result: CheckpointResult,
+    params: CheckpointParams, task_name: str, cp_result: CheckpointResult,
 ) -> None:
     """Display checkpoint result to the user."""
-    icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[status]
-    console.print(f"[green][{icon}] {task_id}: {task_name}[/green]")
-    if notes:
-        console.print(f"  [dim]{notes}[/dim]")
-    if decisions:
+    icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[params.status]
+    console.print(f"[green][{icon}] {params.task_id}: {task_name}[/green]")
+    if params.notes:
+        console.print(f"  [dim]{params.notes}[/dim]")
+    if params.decisions:
         console.print("  [cyan]Decisions:[/cyan]")
-        for d in decisions:
+        for d in params.decisions:
             console.print(f"    • {d}")
-    if next_task:
-        console.print(f"  [yellow]Next → {next_task}[/yellow]")
+    if params.next_task:
+        console.print(f"  [yellow]Next → {params.next_task}[/yellow]")
     if cp_result.phase_completed:
         console.print(f"\n  [green bold]Phase complete: {cp_result.phase_name}[/green bold]")
         console.print("  [yellow]Run `sago replan` before starting the next phase.[/yellow]")
@@ -1193,17 +1258,7 @@ def _create_checkpoint_git_tag(project_path: Path, task_id: str) -> None:
         console.print(f"  [yellow]Tag {tag_name} already exists or git not available[/yellow]")
 
 
-def _do_checkpoint(
-    project_path: Path,
-    task_id: str,
-    status: str,
-    notes: str,
-    next_task: str,
-    next_action: str,
-    decisions: list[str],
-    phase: str,
-    git_tag: bool,
-) -> None:
+def _do_checkpoint(project_path: Path, params: CheckpointParams) -> None:
     manager = ProjectManager(config)
     if not manager.is_sago_project(project_path):
         console.print(f"[red]Not a sago project: {project_path}[/red]")
@@ -1216,26 +1271,28 @@ def _do_checkpoint(
 
     parser = MarkdownParser()
     phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
-    task_name, phase_name, phase_task_ids = _resolve_task_from_plan(phases, task_id, phase)
+    task_name, phase_name, phase_task_ids = _resolve_task_from_plan(
+        phases, params.task_id, params.phase,
+    )
 
-    task_status = TaskStatus(status)
+    task_status = TaskStatus(params.status)
     state_mgr = StateManager(project_path / "STATE.md")
     cp_result = state_mgr.checkpoint(
-        task_id=task_id,
+        task_id=params.task_id,
         task_name=task_name,
         status=task_status,
-        notes=notes,
+        notes=params.notes,
         phase_name=phase_name,
-        next_task=next_task,
-        next_action=next_action,
-        decisions=decisions if decisions else None,
+        next_task=params.next_task,
+        next_action=params.next_action,
+        decisions=params.decisions if params.decisions else None,
         phase_task_ids=phase_task_ids,
     )
 
-    _print_checkpoint_result(task_id, task_name, status, notes, decisions, next_task, cp_result)
+    _print_checkpoint_result(params, task_name, cp_result)
 
-    if git_tag and task_status == TaskStatus.DONE:
-        _create_checkpoint_git_tag(project_path, task_id)
+    if params.git_tag and task_status == TaskStatus.DONE:
+        _create_checkpoint_git_tag(project_path, params.task_id)
 
 
 @app.command()
@@ -1268,8 +1325,7 @@ def checkpoint(
         console.print(f"[red]Invalid status: {status}. Must be done, failed, or skipped.[/red]")
         raise typer.Exit(1)
     try:
-        _do_checkpoint(
-            project_path=project_path,
+        params = CheckpointParams(
             task_id=task_id,
             status=status,
             notes=notes,
@@ -1279,6 +1335,7 @@ def checkpoint(
             phase=phase,
             git_tag=git_tag,
         )
+        _do_checkpoint(project_path=project_path, params=params)
     except typer.Exit:
         raise
     except Exception as e:

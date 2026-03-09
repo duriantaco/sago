@@ -35,14 +35,12 @@ class LLMClient:
         api_key: str | None = None,
         temperature: float = 0.1,
         max_tokens: int = 4096,
-        max_retries: int = 3,
         warn_token_threshold: int = 50_000,
     ) -> None:
         self.model = model
         self.api_key = api_key
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.max_retries = max_retries
         self.warn_token_threshold = warn_token_threshold
 
     def _build_kwargs(
@@ -68,13 +66,9 @@ class LLMClient:
             kwargs["tool_choice"] = tool_choice or "auto"
         return self._sanitize_provider_kwargs(kwargs)
 
-    def _is_chatgpt_subscription_model(self) -> bool:
-        """True for LiteLLM ChatGPT subscription route models."""
-        return self.model.lower().startswith("chatgpt/")
-
     def _sanitize_provider_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Strip fields rejected by specific provider backends."""
-        if self._is_chatgpt_subscription_model():
+        if self.model.lower().startswith("chatgpt/"):
             for key in ("max_tokens", "max_output_tokens", "max_completion_tokens", "metadata"):
                 kwargs.pop(key, None)
         return kwargs
@@ -369,7 +363,7 @@ class LLMClient:
             import litellm
 
             return litellm.token_counter(model=self.model, text=text)
-        except Exception:
+        except (ImportError, ValueError, TypeError):
             return len(text) // 4
 
     def validate_messages(self, messages: list[dict[str, Any]]) -> bool:
@@ -396,5 +390,5 @@ class LLMClient:
             import litellm
 
             return bool(litellm.supports_function_calling(model=self.model))
-        except Exception:
+        except (ImportError, ValueError, TypeError):
             return False

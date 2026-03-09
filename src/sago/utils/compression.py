@@ -220,22 +220,23 @@ class ContextManager:
         self.compression_threshold = compression_threshold
         self.default_compressor = default_compressor
 
-        self.compressors: dict[str, CompressorInterface] = {
+        self._compressors: dict[str, CompressorInterface] = {
             "passthrough": PassthroughCompressor(),
             "sliding_window": SlidingWindowCompressor(),
         }
 
-        self._llmlingua_loaded = False
+    @property
+    def compressors(self) -> dict[str, CompressorInterface]:
+        return self._compressors
 
     def _ensure_llmlingua(self) -> None:
-        if not self._llmlingua_loaded:
+        if "llmlingua" not in self._compressors:
             try:
-                self.compressors["llmlingua"] = LLMLinguaCompressor()
-                self._llmlingua_loaded = True
+                self._compressors["llmlingua"] = LLMLinguaCompressor()
                 logger.info("LLMLingua compressor loaded successfully")
-            except Exception as e:
+            except (ImportError, RuntimeError) as e:
                 logger.warning(f"Could not load LLMLingua: {e}. Using fallback.")
-                self.compressors["llmlingua"] = PassthroughCompressor()
+                self._compressors["llmlingua"] = PassthroughCompressor()
 
     def should_compress(self, text: str) -> bool:
         estimated_tokens = len(text) // 4
@@ -254,10 +255,10 @@ class ContextManager:
         if strategy == "llmlingua":
             self._ensure_llmlingua()
 
-        compressor = self.compressors.get(strategy)
+        compressor = self._compressors.get(strategy)
         if compressor is None:
             logger.warning(f"Unknown compressor: {strategy}, using passthrough")
-            compressor = self.compressors["passthrough"]
+            compressor = self._compressors["passthrough"]
 
         if target_tokens is None:
             target_tokens = int(self.max_context_tokens * 0.7)
@@ -277,13 +278,13 @@ class ContextManager:
             return self.compress(text, **kwargs)
         else:
             logger.debug("Context within limits, no compression needed")
-            return self.compressors["passthrough"].compress(text)
+            return self._compressors["passthrough"].compress(text)
 
     def get_stats(self) -> dict[str, Any]:
         return {
             "max_context_tokens": self.max_context_tokens,
             "compression_threshold": self.compression_threshold,
             "default_compressor": self.default_compressor,
-            "available_compressors": list(self.compressors.keys()),
-            "llmlingua_loaded": self._llmlingua_loaded,
+            "available_compressors": list(self._compressors.keys()),
+            "llmlingua_loaded": "llmlingua" in self._compressors,
         }

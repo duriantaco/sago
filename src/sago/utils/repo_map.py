@@ -1,8 +1,11 @@
 """Aider-style repository map: extract class/function signatures from Python files."""
 
 import ast
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _SKIP_DIRS = {
     "__pycache__",
@@ -28,8 +31,8 @@ def _format_arg(arg: ast.arg) -> str:
         try:
             ann = ast.unparse(arg.annotation)
             return f"{name}: {ann}"
-        except Exception:
-            pass
+        except (AttributeError, ValueError) as exc:
+            logger.debug("Could not unparse annotation for %s: %s", name, exc)
     return name
 
 
@@ -41,8 +44,8 @@ def _format_function(node: ast.FunctionDef | ast.AsyncFunctionDef, indent: str =
     if node.returns:
         try:
             ret = f" -> {ast.unparse(node.returns)}"
-        except Exception:
-            pass
+        except (AttributeError, ValueError) as exc:
+            logger.debug("Could not unparse return annotation for %s: %s", node.name, exc)
     prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
     return f"{indent}{prefix} {node.name}({', '.join(args)}){ret}"
 
@@ -52,7 +55,7 @@ def _format_class(node: ast.ClassDef) -> list[str]:
     for base in node.bases:
         try:
             bases.append(ast.unparse(base))
-        except Exception:
+        except (AttributeError, ValueError):
             bases.append("?")
     base_str = f"({', '.join(bases)})" if bases else ""
     lines = [f"class {node.name}{base_str}:"]
@@ -107,7 +110,8 @@ def generate_repo_map(
             fpath = Path(root) / fname
             try:
                 source = fpath.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError) as exc:
+                logger.debug("Skipping %s: %s", fpath, exc)
                 continue
             rel = fpath.relative_to(project_path)
             sigs = _extract_signatures(source, str(rel))

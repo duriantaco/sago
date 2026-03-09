@@ -103,7 +103,7 @@ class SmartCache:
                 if datetime.now() - cached_time > self.ttl:
                     expired += 1
             except (OSError, json.JSONDecodeError, KeyError, ValueError):
-                pass
+                expired += 1  # count corrupt/unreadable entries as expired
 
         return {
             "total_entries": len(cache_files),

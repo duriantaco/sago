@@ -6,7 +6,7 @@ import pytest
 from sago.models import Phase, Task
 from sago.web.watcher import (
     ProjectWatcher,
-    _is_ignored,
+    _IgnoreFilter,
     _load_gitignore_patterns,
 )
 
@@ -198,13 +198,13 @@ def test_gitignore_patterns(tmp_path: Path) -> None:
 
 def test_is_ignored() -> None:
     """Test the ignore pattern matching."""
-    patterns = ["node_modules", "*.pyc", "__pycache__", ".git"]
+    filt = _IgnoreFilter.from_patterns(["node_modules", "*.pyc", "__pycache__", ".git"])
 
-    assert _is_ignored("node_modules", patterns) is True
-    assert _is_ignored("src/__pycache__", patterns) is True
-    assert _is_ignored("test.pyc", patterns) is True
-    assert _is_ignored("src/main.py", patterns) is False
-    assert _is_ignored("README.md", patterns) is False
+    assert filt.is_ignored("node_modules") is True
+    assert filt.is_ignored("src/__pycache__") is True
+    assert filt.is_ignored("test.pyc") is True
+    assert filt.is_ignored("src/main.py") is False
+    assert filt.is_ignored("README.md") is False
 
 
 def test_state_caching(project_dir: Path) -> None:

@@ -1,9 +1,12 @@
+import logging
 import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 # Provider-specific env var names that litellm also recognises
 _PROVIDER_ENV_KEYS: dict[str, str] = {
@@ -138,8 +141,10 @@ class Config(BaseSettings):
             stored = keyring.get_password("sago", "judge_api_key")
             if stored:
                 return stored
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, KeyError, OSError) as exc:
+            # keyring may not be installed (ImportError), may lack a usable
+            # backend (RuntimeError/KeyError), or hit filesystem errors (OSError).
+            logger.debug("keyring lookup failed: %s", exc)
         return self.judge_api_key or self.llm_api_key
 
     llm_temperature: float = Field(
