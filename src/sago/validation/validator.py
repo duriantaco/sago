@@ -2,12 +2,98 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from enum import StrEnum
 
 from pydantic import BaseModel
 
 from sago.models.plan import Plan
+
+# Commands that should never appear in verify fields.
+# Matched against the first token of each command in a pipeline.
+DANGEROUS_COMMANDS: frozenset[str] = frozenset({
+    "rm",
+    "rmdir",
+    "dd",
+    "mkfs",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    "kill",
+    "killall",
+    "pkill",
+    "chmod",
+    "chown",
+    "mount",
+    "umount",
+    "fdisk",
+    "format",
+    "wget",
+    "curl",
+    "nc",
+    "ncat",
+    "ssh",
+    "scp",
+    "rsync",
+    "eval",
+    "exec",
+    "sudo",
+    "su",
+    "pip install",
+    "npm install",
+    "apt",
+    "brew",
+    "yum",
+    "dnf",
+    "pacman",
+})
+
+# Patterns that indicate shell injection risk in verify commands
+DANGEROUS_PATTERNS: list[tuple[str, str]] = [
+    (r"\$\(", "command substitution $()"),
+    (r"`[^`]+`", "backtick command substitution"),
+    (r"\|\s*(bash|sh|zsh|dash|csh)", "piping to shell"),
+    (r">\s*/", "redirect to absolute path"),
+    (r"&&\s*rm\b", "chained rm command"),
+    (r";\s*rm\b", "chained rm command"),
+    (r"\brm\s+-[a-z]*r", "recursive rm"),
+    (r"\bcurl\b.*\|\s*(bash|sh|python)", "download-and-execute"),
+    (r"\bwget\b.*\|\s*(bash|sh|python)", "download-and-execute"),
+]
+
+
+def check_verify_safety(verify_cmd: str) -> list[str]:
+    """Check a verify command for dangerous patterns.
+
+    Returns a list of warning strings (empty = safe).
+    This is used both by PlanValidator and by CLI commands like `sago next`.
+    """
+    warnings: list[str] = []
+    if not verify_cmd or not verify_cmd.strip():
+        return warnings
+
+    cmd = verify_cmd.strip()
+
+    # Split on pipes and check each segment
+    segments = re.split(r"\s*\|\s*", cmd)
+    for segment in segments:
+        tokens = segment.strip().split()
+        if not tokens:
+            continue
+        first = tokens[0].lower()
+        # Check two-token commands like "pip install"
+        two_token = f"{first} {tokens[1].lower()}" if len(tokens) > 1 else ""
+        if first in DANGEROUS_COMMANDS or two_token in DANGEROUS_COMMANDS:
+            warnings.append(f"dangerous command '{first}' in verify")
+
+    # Check patterns
+    for pattern, description in DANGEROUS_PATTERNS:
+        if re.search(pattern, cmd):
+            warnings.append(f"suspicious pattern: {description}")
+
+    return warnings
 
 
 class Severity(StrEnum):
@@ -72,6 +158,7 @@ class PlanValidator:
         issues.extend(self._check_single_task_phase(plan))
         issues.extend(self._check_large_phase(plan))
         issues.extend(self._check_over_specified_deps(plan))
+        issues.extend(self._check_dangerous_verify(plan))
         return ValidationResult(issues=issues)
 
     def _check_missing_task_ids(self, plan: Plan) -> list[ValidationIssue]:
@@ -298,6 +385,23 @@ class PlanValidator:
                         severity=Severity.WARNING,
                         code="TOO_MANY_FILES",
                         message=f"Task '{task.id}' touches {len(task.files)} files — consider splitting",
+                        task_id=task.id,
+                        phase_name=task.phase_name,
+                    )
+                )
+        return issues
+
+    def _check_dangerous_verify(self, plan: Plan) -> list[ValidationIssue]:
+        """Flag verify commands that contain dangerous or suspicious patterns."""
+        issues = []
+        for task in plan.all_tasks():
+            warnings = check_verify_safety(task.verify)
+            for warning in warnings:
+                issues.append(
+                    ValidationIssue(
+                        severity=Severity.WARNING,
+                        code="DANGEROUS_VERIFY",
+                        message=f"Task '{task.id}': {warning}",
                         task_id=task.id,
                         phase_name=task.phase_name,
                     )

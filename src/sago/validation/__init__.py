@@ -5,6 +5,7 @@ from sago.validation.validator import (
     Severity,
     ValidationIssue,
     ValidationResult,
+    check_verify_safety,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "Severity",
     "ValidationIssue",
     "ValidationResult",
+    "check_verify_safety",
 ]
