@@ -12,43 +12,45 @@ from sago.models.plan import Plan
 
 # Commands that should never appear in verify fields.
 # Matched against the first token of each command in a pipeline.
-DANGEROUS_COMMANDS: frozenset[str] = frozenset({
-    "rm",
-    "rmdir",
-    "dd",
-    "mkfs",
-    "shutdown",
-    "reboot",
-    "halt",
-    "poweroff",
-    "kill",
-    "killall",
-    "pkill",
-    "chmod",
-    "chown",
-    "mount",
-    "umount",
-    "fdisk",
-    "format",
-    "wget",
-    "curl",
-    "nc",
-    "ncat",
-    "ssh",
-    "scp",
-    "rsync",
-    "eval",
-    "exec",
-    "sudo",
-    "su",
-    "pip install",
-    "npm install",
-    "apt",
-    "brew",
-    "yum",
-    "dnf",
-    "pacman",
-})
+DANGEROUS_COMMANDS: frozenset[str] = frozenset(
+    {
+        "rm",
+        "rmdir",
+        "dd",
+        "mkfs",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "kill",
+        "killall",
+        "pkill",
+        "chmod",
+        "chown",
+        "mount",
+        "umount",
+        "fdisk",
+        "format",
+        "wget",
+        "curl",
+        "nc",
+        "ncat",
+        "ssh",
+        "scp",
+        "rsync",
+        "eval",
+        "exec",
+        "sudo",
+        "su",
+        "pip install",
+        "npm install",
+        "apt",
+        "brew",
+        "yum",
+        "dnf",
+        "pacman",
+    }
+)
 
 # Patterns that indicate shell injection risk in verify commands
 DANGEROUS_PATTERNS: list[tuple[str, str]] = [
@@ -446,7 +448,11 @@ class PlanValidator:
             if i < 2:
                 continue
             prior_ids = {t.id for t in all_tasks[:i]}
-            if len(task.depends_on) >= len(prior_ids) and prior_ids and prior_ids.issubset(set(task.depends_on)):
+            if (
+                len(task.depends_on) >= len(prior_ids)
+                and prior_ids
+                and prior_ids.issubset(set(task.depends_on))
+            ):
                 issues.append(
                     ValidationIssue(
                         severity=Severity.SUGGESTION,

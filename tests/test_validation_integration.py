@@ -275,9 +275,7 @@ class TestExecutionHistoryInReplan:
         with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
             mock_llm.return_value = {"content": VALID_XML}
 
-            await replanner.execute(
-                {"project_path": project_with_plan, "feedback": "add logging"}
-            )
+            await replanner.execute({"project_path": project_with_plan, "feedback": "add logging"})
 
             call_args = mock_llm.call_args[0][0]
             user_msg = call_args[1]["content"]

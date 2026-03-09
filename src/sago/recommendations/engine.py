@@ -71,9 +71,7 @@ class RecommendationEngine:
             for tid in repeated
         ]
 
-    def _check_suggest_replan(
-        self, plan: Plan, state: ProjectState
-    ) -> list[Recommendation]:
+    def _check_suggest_replan(self, plan: Plan, state: ProjectState) -> list[Recommendation]:
         """Suggest replan if > 30% of tasks in any phase have failed."""
         recommendations = []
         failed_ids = state.failed_task_ids()
@@ -95,9 +93,7 @@ class RecommendationEngine:
                 )
         return recommendations
 
-    def _check_phase_complete(
-        self, plan: Plan, state: ProjectState
-    ) -> list[Recommendation]:
+    def _check_phase_complete(self, plan: Plan, state: ProjectState) -> list[Recommendation]:
         """Notify when all tasks in a phase are done."""
         recommendations = []
         completed_ids = state.completed_task_ids()
@@ -115,9 +111,7 @@ class RecommendationEngine:
                 )
         return recommendations
 
-    def _check_suggest_review(
-        self, plan: Plan, state: ProjectState
-    ) -> list[Recommendation]:
+    def _check_suggest_review(self, plan: Plan, state: ProjectState) -> list[Recommendation]:
         """Suggest review if a phase is complete (review availability is a heuristic)."""
         recommendations = []
         completed_ids = state.completed_task_ids()
@@ -171,9 +165,7 @@ class RecommendationEngine:
                 )
         return recommendations
 
-    def _check_scope_drift(
-        self, plan: Plan, state: ProjectState
-    ) -> list[Recommendation]:
+    def _check_scope_drift(self, plan: Plan, state: ProjectState) -> list[Recommendation]:
         """Warn if state references task IDs not in the plan."""
         recommendations = []
         plan_ids = plan.task_ids()

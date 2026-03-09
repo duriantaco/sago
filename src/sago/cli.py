@@ -262,9 +262,7 @@ def init(
         raise typer.Exit(1) from None
 
 
-def _show_task_progress(
-    phases: list[Phase], task_states: list[TaskState], detailed: bool
-) -> None:
+def _show_task_progress(phases: list[Phase], task_states: list[TaskState], detailed: bool) -> None:
     """Display task progress summary and optional per-phase breakdown."""
     completed_set = {ts.task_id for ts in task_states if ts.status == TaskStatus.DONE}
     failed_set = {ts.task_id for ts in task_states if ts.status == TaskStatus.FAILED}
@@ -494,9 +492,7 @@ def plan(
         raise typer.Exit(1) from None
 
 
-def _get_phase_status(
-    phases: list[Phase], task_states: list[TaskState]
-) -> list[dict[str, Any]]:
+def _get_phase_status(phases: list[Phase], task_states: list[TaskState]) -> list[dict[str, Any]]:
     """Group task states by phase, returning per-phase status.
 
     Returns list of dicts: {name, done, failed, pending, total, status}
@@ -1012,9 +1008,7 @@ def _do_lint_plan(project_path: Path, strict: bool, json_output: bool) -> None:
     error_count = len(result.errors)
     warn_count = len(result.warnings)
     sug_count = len(result.suggestions)
-    console.print(
-        f"\n  {error_count} error(s), {warn_count} warning(s), {sug_count} suggestion(s)"
-    )
+    console.print(f"\n  {error_count} error(s), {warn_count} warning(s), {sug_count} suggestion(s)")
 
     if not result.valid:
         raise typer.Exit(1)
@@ -1072,9 +1066,7 @@ def _do_next(project_path: Path) -> None:
 
             # Check dependencies
             if task.depends_on:
-                deps_met = all(
-                    status_by_id.get(dep) == TaskStatus.DONE for dep in task.depends_on
-                )
+                deps_met = all(status_by_id.get(dep) == TaskStatus.DONE for dep in task.depends_on)
             else:
                 # No explicit depends_on: depends on all prior tasks in phase
                 prior_before = []
@@ -1082,9 +1074,7 @@ def _do_next(project_path: Path) -> None:
                     if t.id == task.id:
                         break
                     prior_before.append(t.id)
-                deps_met = all(
-                    status_by_id.get(pid) == TaskStatus.DONE for pid in prior_before
-                )
+                deps_met = all(status_by_id.get(pid) == TaskStatus.DONE for pid in prior_before)
 
             if not deps_met:
                 continue
@@ -1119,9 +1109,7 @@ def _do_next(project_path: Path) -> None:
             # Show resume context if available
             rp = state_mgr.get_resume_point()
             if rp and rp.failure_reason != "None":
-                console.print(
-                    f"\n[yellow]Previous failure:[/yellow] {rp.failure_reason}"
-                )
+                console.print(f"\n[yellow]Previous failure:[/yellow] {rp.failure_reason}")
 
             return
 
@@ -1224,9 +1212,7 @@ def _do_checkpoint(
         console.print(f"  [yellow]Next → {next_task}[/yellow]")
 
     if cp_result.phase_completed:
-        console.print(
-            f"\n  [green bold]Phase complete: {cp_result.phase_name}[/green bold]"
-        )
+        console.print(f"\n  [green bold]Phase complete: {cp_result.phase_name}[/green bold]")
         console.print("  [yellow]Run `sago replan` before starting the next phase.[/yellow]")
 
     # Create git tag for successful tasks
@@ -1253,11 +1239,11 @@ def checkpoint(
         "done", "--status", "-s", help="Task status: done, failed, or skipped"
     ),
     notes: str = typer.Option("", "--notes", "-n", help="Notes about what happened"),
-    next_task: str = typer.Option("", "--next", help="Next task ID and name (e.g. '2.1: Build CLI')"),
-    next_action: str = typer.Option("", "--next-action", help="What to do next"),
-    decisions: list[str] = typer.Option(
-        [], "--decision", "-d", help="Key decision (repeatable)"
+    next_task: str = typer.Option(
+        "", "--next", help="Next task ID and name (e.g. '2.1: Build CLI')"
     ),
+    next_action: str = typer.Option("", "--next-action", help="What to do next"),
+    decisions: list[str] = typer.Option([], "--decision", "-d", help="Key decision (repeatable)"),
     phase: str = typer.Option("", "--phase", help="Override phase name"),
     project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
     git_tag: bool = typer.Option(True, "--git-tag/--no-git-tag", help="Create git tag on success"),

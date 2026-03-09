@@ -33,7 +33,11 @@ Rules:
                 status=AgentStatus.FAILURE,
                 output="",
                 error=str(e),
-                metadata={"phase_name": context.get("phase", Phase(name="", description="", tasks=[])).name},
+                metadata={
+                    "phase_name": context.get(
+                        "phase", Phase(name="", description="", tasks=[])
+                    ).name
+                },
             )
 
     async def _do_execute(self, context: dict[str, Any]) -> AgentResult:

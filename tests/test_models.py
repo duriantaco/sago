@@ -282,22 +282,40 @@ class TestClassifyFailure:
         assert classify_failure("SyntaxError: invalid syntax", 1) == FailureCategory.SYNTAX_ERROR
 
     def test_indentation_error(self) -> None:
-        assert classify_failure("IndentationError: unexpected indent", 1) == FailureCategory.SYNTAX_ERROR
+        assert (
+            classify_failure("IndentationError: unexpected indent", 1)
+            == FailureCategory.SYNTAX_ERROR
+        )
 
     def test_import_error(self) -> None:
-        assert classify_failure("ModuleNotFoundError: No module named 'kafka'", 1) == FailureCategory.IMPORT_ERROR
+        assert (
+            classify_failure("ModuleNotFoundError: No module named 'kafka'", 1)
+            == FailureCategory.IMPORT_ERROR
+        )
 
     def test_import_error_generic(self) -> None:
-        assert classify_failure("ImportError: cannot import name 'foo'", 1) == FailureCategory.IMPORT_ERROR
+        assert (
+            classify_failure("ImportError: cannot import name 'foo'", 1)
+            == FailureCategory.IMPORT_ERROR
+        )
 
     def test_assertion_failure(self) -> None:
-        assert classify_failure("AssertionError: expected True", 1) == FailureCategory.ASSERTION_FAILURE
+        assert (
+            classify_failure("AssertionError: expected True", 1)
+            == FailureCategory.ASSERTION_FAILURE
+        )
 
     def test_assertion_pytest(self) -> None:
-        assert classify_failure("FAILED tests/test_foo.py::test_bar - assert 1 == 2", 1) == FailureCategory.ASSERTION_FAILURE
+        assert (
+            classify_failure("FAILED tests/test_foo.py::test_bar - assert 1 == 2", 1)
+            == FailureCategory.ASSERTION_FAILURE
+        )
 
     def test_environment_missing(self) -> None:
-        assert classify_failure("bash: docker: command not found", 127) == FailureCategory.ENVIRONMENT_MISSING
+        assert (
+            classify_failure("bash: docker: command not found", 127)
+            == FailureCategory.ENVIRONMENT_MISSING
+        )
 
     def test_timeout(self) -> None:
         assert classify_failure("TimeoutError: operation timed out", 1) == FailureCategory.TIMEOUT
@@ -306,7 +324,9 @@ class TestClassifyFailure:
         assert classify_failure("Process timed out after 30s", 1) == FailureCategory.TIMEOUT
 
     def test_runtime_error(self) -> None:
-        assert classify_failure("TypeError: unsupported operand", 1) == FailureCategory.RUNTIME_ERROR
+        assert (
+            classify_failure("TypeError: unsupported operand", 1) == FailureCategory.RUNTIME_ERROR
+        )
 
     def test_traceback(self) -> None:
         stderr = "Traceback (most recent call last):\n  File 'x.py'\nKeyError: 'foo'"
@@ -333,9 +353,7 @@ class TestExecutionHistory:
                 ExecutionRecord(
                     task_id="1.1",
                     attempt=2,
-                    verifier_result=VerifierResult(
-                        task_id="1.1", command="pytest", exit_code=0
-                    ),
+                    verifier_result=VerifierResult(task_id="1.1", command="pytest", exit_code=0),
                 ),
                 ExecutionRecord(
                     task_id="1.2",
@@ -356,23 +374,17 @@ class TestExecutionHistory:
                 ExecutionRecord(
                     task_id="1.1",
                     attempt=1,
-                    verifier_result=VerifierResult(
-                        task_id="1.1", command="pytest", exit_code=1
-                    ),
+                    verifier_result=VerifierResult(task_id="1.1", command="pytest", exit_code=1),
                 ),
                 ExecutionRecord(
                     task_id="1.1",
                     attempt=2,
-                    verifier_result=VerifierResult(
-                        task_id="1.1", command="pytest", exit_code=1
-                    ),
+                    verifier_result=VerifierResult(task_id="1.1", command="pytest", exit_code=1),
                 ),
                 ExecutionRecord(
                     task_id="1.2",
                     attempt=1,
-                    verifier_result=VerifierResult(
-                        task_id="1.2", command="pytest", exit_code=1
-                    ),
+                    verifier_result=VerifierResult(task_id="1.2", command="pytest", exit_code=1),
                 ),
             ]
         )

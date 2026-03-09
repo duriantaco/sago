@@ -173,9 +173,7 @@ Rules for modifying the plan:
 
         return result
 
-    def _build_execution_summary(
-        self, execution_history: ExecutionHistory | None
-    ) -> str:
+    def _build_execution_summary(self, execution_history: ExecutionHistory | None) -> str:
         """Build a structured summary of execution history for replan context."""
         if execution_history is None or not execution_history.records:
             return ""

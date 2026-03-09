@@ -569,10 +569,20 @@ def test_checkpoint_no_auto_phase_when_incomplete(tmp_path: Path) -> None:
 def test_checkpoint_no_auto_phase_on_failure(tmp_path: Path) -> None:
     """Failed tasks don't trigger phase completion."""
     mgr = _make_manager(tmp_path)
-    mgr.checkpoint(task_id="1.1", task_name="A", status=TaskStatus.DONE,
-                   phase_task_ids=["1.1", "1.2"], phase_name="P1")
-    result = mgr.checkpoint(task_id="1.2", task_name="B", status=TaskStatus.FAILED,
-                            phase_task_ids=["1.1", "1.2"], phase_name="P1")
+    mgr.checkpoint(
+        task_id="1.1",
+        task_name="A",
+        status=TaskStatus.DONE,
+        phase_task_ids=["1.1", "1.2"],
+        phase_name="P1",
+    )
+    result = mgr.checkpoint(
+        task_id="1.2",
+        task_name="B",
+        status=TaskStatus.FAILED,
+        phase_task_ids=["1.1", "1.2"],
+        phase_name="P1",
+    )
     assert not result.phase_completed
 
 

@@ -102,11 +102,16 @@ def test_checkpoint_done(sago_project_with_plan: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "checkpoint", "1.1",
-            "--status", "done",
-            "--notes", "Config works",
-            "--next", "1.2: Create main",
-            "--path", str(sago_project_with_plan),
+            "checkpoint",
+            "1.1",
+            "--status",
+            "done",
+            "--notes",
+            "Config works",
+            "--next",
+            "1.2: Create main",
+            "--path",
+            str(sago_project_with_plan),
             "--no-git-tag",
         ],
     )
@@ -120,10 +125,14 @@ def test_checkpoint_failed(sago_project_with_plan: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "checkpoint", "1.2",
-            "--status", "failed",
-            "--notes", "import error",
-            "--path", str(sago_project_with_plan),
+            "checkpoint",
+            "1.2",
+            "--status",
+            "failed",
+            "--notes",
+            "import error",
+            "--path",
+            str(sago_project_with_plan),
             "--no-git-tag",
         ],
     )
@@ -136,11 +145,16 @@ def test_checkpoint_with_decisions(sago_project_with_plan: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "checkpoint", "1.1",
-            "--status", "done",
-            "-d", "Chose YAML over JSON",
-            "-d", "Using pydantic",
-            "--path", str(sago_project_with_plan),
+            "checkpoint",
+            "1.1",
+            "--status",
+            "done",
+            "-d",
+            "Chose YAML over JSON",
+            "-d",
+            "Using pydantic",
+            "--path",
+            str(sago_project_with_plan),
             "--no-git-tag",
         ],
     )
@@ -163,9 +177,12 @@ def test_checkpoint_invalid_status(sago_project_with_plan: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "checkpoint", "1.1",
-            "--status", "invalid",
-            "--path", str(sago_project_with_plan),
+            "checkpoint",
+            "1.1",
+            "--status",
+            "invalid",
+            "--path",
+            str(sago_project_with_plan),
         ],
     )
     assert result.exit_code == 1

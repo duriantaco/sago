@@ -304,9 +304,7 @@ Generate a complete, executable plan now:""",
             lines.append(f"  - {issue.code}{loc}: {issue.message}")
         return "\n".join(lines)
 
-    async def _retry_with_feedback(
-        self, original_xml: str, error_feedback: str
-    ) -> str:
+    async def _retry_with_feedback(self, original_xml: str, error_feedback: str) -> str:
         """Retry plan generation with error feedback."""
         messages = [
             {"role": "system", "content": self._build_system_prompt()},

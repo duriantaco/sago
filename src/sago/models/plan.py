@@ -128,7 +128,9 @@ class Plan(BaseModel):
                 name_elem.text = task.name
 
                 files_elem = ET.SubElement(task_elem, "files")
-                files_elem.text = "\n                " + "\n                ".join(task.files) + "\n            "
+                files_elem.text = (
+                    "\n                " + "\n                ".join(task.files) + "\n            "
+                )
 
                 action_elem = ET.SubElement(task_elem, "action")
                 action_elem.text = f"\n                {task.action}\n            "

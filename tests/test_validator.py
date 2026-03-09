@@ -380,18 +380,14 @@ class TestDangerousVerify:
         assert any("redirect to absolute path" in w for w in warnings)
 
     def test_validator_flags_dangerous_verify(self, validator: PlanValidator) -> None:
-        plan = _plan(
-            _phase("P1", _task("1.1", verify="rm -rf build/"))
-        )
+        plan = _plan(_phase("P1", _task("1.1", verify="rm -rf build/")))
         result = validator.validate(plan)
         dangerous = [i for i in result.warnings if i.code == "DANGEROUS_VERIFY"]
         assert len(dangerous) > 0
         assert "1.1" in dangerous[0].message
 
     def test_validator_safe_verify_no_warning(self, validator: PlanValidator) -> None:
-        plan = _plan(
-            _phase("P1", _task("1.1", verify="pytest tests/ -v"))
-        )
+        plan = _plan(_phase("P1", _task("1.1", verify="pytest tests/ -v")))
         result = validator.validate(plan)
         dangerous = [i for i in result.warnings if i.code == "DANGEROUS_VERIFY"]
         assert len(dangerous) == 0

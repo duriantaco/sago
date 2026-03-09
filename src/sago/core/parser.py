@@ -230,4 +230,3 @@ class MarkdownParser:
     def parse_roadmap_file(self, file_path: Path) -> list[Milestone]:
         content = file_path.read_text(encoding="utf-8")
         return self.parse_roadmap(content)
-

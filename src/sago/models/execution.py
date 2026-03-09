@@ -47,7 +47,10 @@ _FAILURE_PATTERNS: list[tuple[re.Pattern[str], FailureCategory]] = [
     (re.compile(r"FileNotFoundError:", re.IGNORECASE), FailureCategory.RUNTIME_ERROR),
     (re.compile(r"PermissionError:", re.IGNORECASE), FailureCategory.RUNTIME_ERROR),
     (re.compile(r"OSError:", re.IGNORECASE), FailureCategory.RUNTIME_ERROR),
-    (re.compile(r"Traceback \(most recent call last\)", re.IGNORECASE), FailureCategory.RUNTIME_ERROR),
+    (
+        re.compile(r"Traceback \(most recent call last\)", re.IGNORECASE),
+        FailureCategory.RUNTIME_ERROR,
+    ),
 ]
 
 

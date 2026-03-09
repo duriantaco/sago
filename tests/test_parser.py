@@ -371,5 +371,3 @@ def test_resume_point_to_dict() -> None:
     assert d["next_action"] == "Create config module"
     assert d["failure_reason"] == "None"
     assert d["checkpoint"] == "sago-checkpoint-1.1"
-
-

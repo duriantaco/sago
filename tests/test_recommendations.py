@@ -71,9 +71,7 @@ class TestRepeatedFailure:
 
     def test_repeated_failure_warns(self, engine: RecommendationEngine) -> None:
         plan = _plan(_phase("P1", _task("1.1")))
-        history = ExecutionHistory(
-            records=[_fail_record("1.1", 1), _fail_record("1.1", 2)]
-        )
+        history = ExecutionHistory(records=[_fail_record("1.1", 1), _fail_record("1.1", 2)])
         recs = engine.evaluate(plan, ProjectState(), history)
         repeated = [r for r in recs if r.type == RecommendationType.WARN_REPEATED_FAILURE]
         assert len(repeated) == 1
@@ -98,9 +96,7 @@ class TestSuggestReplan:
         assert any(r.type == RecommendationType.SUGGEST_REPLAN for r in recs)
 
     def test_below_threshold(self, engine: RecommendationEngine) -> None:
-        plan = _plan(
-            _phase("P1", _task("1.1"), _task("1.2"), _task("1.3"), _task("1.4"))
-        )
+        plan = _plan(_phase("P1", _task("1.1"), _task("1.2"), _task("1.3"), _task("1.4")))
         state = _state(_ts("1.1", TaskStatus.FAILED))
         recs = engine.evaluate(plan, state)
         assert not any(r.type == RecommendationType.SUGGEST_REPLAN for r in recs)

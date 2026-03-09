@@ -122,9 +122,7 @@ class StateManager:
 
         # Parse decisions
         decisions: list[str] = []
-        dec_match = re.search(
-            r"## Key Decisions\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL
-        )
+        dec_match = re.search(r"## Key Decisions\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
         if dec_match:
             for line in dec_match.group(1).split("\n"):
                 line = line.strip()
@@ -258,9 +256,7 @@ class StateManager:
                 content = content.rstrip("\n") + "\n\n" + new_section
         return content
 
-    def _update_current_context(
-        self, content: str, active_phase: str, current_task: str
-    ) -> str:
+    def _update_current_context(self, content: str, active_phase: str, current_task: str) -> str:
         """Update the Current Context section."""
         content = re.sub(
             r"(\*\s*\*\*Active Phase:\*\*)\s*.*",
@@ -318,7 +314,7 @@ class StateManager:
 
         # Append to Completed Tasks section
         completed_idx = content.index("## Completed Tasks")
-        rest = content[completed_idx + len("## Completed Tasks"):]
+        rest = content[completed_idx + len("## Completed Tasks") :]
         next_section = re.search(r"\n## ", rest)
         if next_section:
             insert_pos = completed_idx + len("## Completed Tasks") + next_section.start()
@@ -356,9 +352,7 @@ class StateManager:
         # Auto phase detection
         result = CheckpointResult()
         if phase_task_ids and phase_name and status == TaskStatus.DONE:
-            all_done = all(
-                self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids
-            )
+            all_done = all(self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids)
             if all_done:
                 self.mark_phase_complete(phase_name)
                 result.phase_completed = True
