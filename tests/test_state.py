@@ -6,7 +6,6 @@ from sago.models.plan import Phase, Task
 from sago.models.state import TaskStatus
 from sago.state import StateManager
 
-
 INITIAL_STATE = """\
 # Test State
 

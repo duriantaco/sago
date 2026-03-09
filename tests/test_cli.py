@@ -3,13 +3,9 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from click.exceptions import Exit
-import pytest
 from typer.testing import CliRunner
 
-import sago.cli as cli
 from sago.cli import app
-from sago.core.config import Config
 
 runner = CliRunner()
 
