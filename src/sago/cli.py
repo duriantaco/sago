@@ -12,11 +12,11 @@ from sago.agents.orchestrator import Orchestrator
 from sago.core.config import Config, find_dotenv
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
-from sago.models import Phase
+from sago.models import Phase, Task
 from sago.models.plan import Plan
 from sago.models.state import ProjectState, TaskState, TaskStatus
 from sago.recommendations import RecommendationEngine
-from sago.state import StateManager
+from sago.state import CheckpointResult, StateManager
 from sago.validation import PlanValidator
 
 app = typer.Typer(
@@ -1036,6 +1036,50 @@ def lint_plan(
         raise typer.Exit(1) from None
 
 
+def _check_deps_met(
+    task: Task, phase: Phase, status_by_id: dict[str, TaskStatus]
+) -> bool:
+    """Return True if all dependencies (explicit or implicit) are satisfied."""
+    if task.depends_on:
+        return all(status_by_id.get(dep) == TaskStatus.DONE for dep in task.depends_on)
+    # No explicit depends_on: depends on all prior tasks in phase
+    prior_ids = [t.id for t in phase.tasks[:phase.tasks.index(task)]]
+    return all(status_by_id.get(pid) == TaskStatus.DONE for pid in prior_ids)
+
+
+def _print_next_task(
+    task: Task, phase: Phase, status_by_id: dict[str, TaskStatus], state_mgr: StateManager
+) -> None:
+    """Display full details of the next actionable task."""
+    from sago.validation import check_verify_safety
+
+    console.print(Panel(f"[bold]{task.id}: {task.name}[/bold]", title="Next Task"))
+
+    info_table = Table(show_header=False, padding=(0, 2))
+    info_table.add_row("[cyan]Phase[/cyan]", phase.name)
+    info_table.add_row("[cyan]Files[/cyan]", "\n".join(task.files) if task.files else "—")
+    info_table.add_row("[cyan]Verify[/cyan]", task.verify or "—")
+    info_table.add_row("[cyan]Done[/cyan]", task.done or "—")
+    console.print(info_table)
+
+    if task.verify:
+        for warning in check_verify_safety(task.verify):
+            console.print(f"  [red]⚠ SAFETY:[/red] [yellow]{warning}[/yellow]")
+
+    if task.depends_on:
+        dep_parts = [
+            f"{dep_id} ({status_by_id.get(dep_id, TaskStatus.PENDING).value})"
+            for dep_id in task.depends_on
+        ]
+        console.print(f"\n  [dim]Depends on: {', '.join(dep_parts)}[/dim]")
+
+    console.print(f"\n[bold]Action:[/bold]\n{task.action}")
+
+    rp = state_mgr.get_resume_point()
+    if rp and rp.failure_reason != "None":
+        console.print(f"\n[yellow]Previous failure:[/yellow] {rp.failure_reason}")
+
+
 def _do_next(project_path: Path) -> None:
     _load_config(project_path)
     manager = ProjectManager(config)
@@ -1054,68 +1098,19 @@ def _do_next(project_path: Path) -> None:
     phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
     state_mgr = StateManager(project_path / "STATE.md")
     task_states = state_mgr.get_task_states(phases)
-
-    # Build lookup of task status by ID
     status_by_id = {ts.task_id: ts.status for ts in task_states}
 
-    # Find the next task: first PENDING task whose dependencies are all DONE
     for phase in phases:
         for task in phase.tasks:
             if status_by_id.get(task.id) != TaskStatus.PENDING:
                 continue
-
-            # Check dependencies
-            if task.depends_on:
-                deps_met = all(status_by_id.get(dep) == TaskStatus.DONE for dep in task.depends_on)
-            else:
-                # No explicit depends_on: depends on all prior tasks in phase
-                prior_before = []
-                for t in phase.tasks:
-                    if t.id == task.id:
-                        break
-                    prior_before.append(t.id)
-                deps_met = all(status_by_id.get(pid) == TaskStatus.DONE for pid in prior_before)
-
-            if not deps_met:
+            if not _check_deps_met(task, phase, status_by_id):
                 continue
-
-            # Found the next task
-            console.print(Panel(f"[bold]{task.id}: {task.name}[/bold]", title="Next Task"))
-
-            info_table = Table(show_header=False, padding=(0, 2))
-            info_table.add_row("[cyan]Phase[/cyan]", phase.name)
-            info_table.add_row("[cyan]Files[/cyan]", "\n".join(task.files) if task.files else "—")
-            info_table.add_row("[cyan]Verify[/cyan]", task.verify or "—")
-            info_table.add_row("[cyan]Done[/cyan]", task.done or "—")
-            console.print(info_table)
-
-            # Warn about dangerous verify commands
-            if task.verify:
-                from sago.validation import check_verify_safety
-
-                safety_warnings = check_verify_safety(task.verify)
-                for warning in safety_warnings:
-                    console.print(f"  [red]⚠ SAFETY:[/red] [yellow]{warning}[/yellow]")
-
-            if task.depends_on:
-                dep_parts = []
-                for dep_id in task.depends_on:
-                    dep_status = status_by_id.get(dep_id, TaskStatus.PENDING)
-                    dep_parts.append(f"{dep_id} ({dep_status.value})")
-                console.print(f"\n  [dim]Depends on: {', '.join(dep_parts)}[/dim]")
-
-            console.print(f"\n[bold]Action:[/bold]\n{task.action}")
-
-            # Show resume context if available
-            rp = state_mgr.get_resume_point()
-            if rp and rp.failure_reason != "None":
-                console.print(f"\n[yellow]Previous failure:[/yellow] {rp.failure_reason}")
-
+            _print_next_task(task, phase, status_by_id, state_mgr)
             return
 
     # No pending tasks found
-    all_done = all(ts.status == TaskStatus.DONE for ts in task_states)
-    if all_done:
+    if all(ts.status == TaskStatus.DONE for ts in task_states):
         console.print("[green]All tasks complete![/green]")
     else:
         failed = [ts for ts in task_states if ts.status == TaskStatus.FAILED]
@@ -1142,6 +1137,62 @@ def next_task(
         raise typer.Exit(1) from None
 
 
+def _resolve_task_from_plan(
+    plan_phases: list[Phase], task_id: str, phase_override: str
+) -> tuple[str, str, list[str]]:
+    """Find task name, phase name, and phase task IDs from the plan.
+
+    Raises typer.Exit(1) if the task is not found.
+    """
+    for p in plan_phases:
+        for t in p.tasks:
+            if t.id == task_id:
+                phase_name = phase_override or p.name
+                phase_task_ids = [pt.id for pt in p.tasks]
+                return t.name, phase_name, phase_task_ids
+    console.print(f"[red]Task {task_id} not found in PLAN.md[/red]")
+    raise typer.Exit(1)
+
+
+def _print_checkpoint_result(
+    task_id: str, task_name: str, status: str,
+    notes: str, decisions: list[str], next_task: str,
+    cp_result: CheckpointResult,
+) -> None:
+    """Display checkpoint result to the user."""
+    icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[status]
+    console.print(f"[green][{icon}] {task_id}: {task_name}[/green]")
+    if notes:
+        console.print(f"  [dim]{notes}[/dim]")
+    if decisions:
+        console.print("  [cyan]Decisions:[/cyan]")
+        for d in decisions:
+            console.print(f"    • {d}")
+    if next_task:
+        console.print(f"  [yellow]Next → {next_task}[/yellow]")
+    if cp_result.phase_completed:
+        console.print(f"\n  [green bold]Phase complete: {cp_result.phase_name}[/green bold]")
+        console.print("  [yellow]Run `sago replan` before starting the next phase.[/yellow]")
+
+
+def _create_checkpoint_git_tag(project_path: Path, task_id: str) -> None:
+    """Create a git tag for a completed checkpoint."""
+    import subprocess
+
+    tag_name = f"sago-checkpoint-{task_id}"
+    try:
+        subprocess.run(
+            ["git", "tag", tag_name],
+            cwd=project_path,
+            capture_output=True,
+            check=True,
+            timeout=30,
+        )
+        console.print(f"  [dim]Tagged: {tag_name}[/dim]")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        console.print(f"  [yellow]Tag {tag_name} already exists or git not available[/yellow]")
+
+
 def _do_checkpoint(
     project_path: Path,
     task_id: str,
@@ -1163,27 +1214,11 @@ def _do_checkpoint(
         console.print("[red]No PLAN.md found.[/red]")
         raise typer.Exit(1)
 
-    # Resolve task name and phase from plan
     parser = MarkdownParser()
     phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
-    task_name = ""
-    phase_name = phase
-    phase_task_ids: list[str] = []
-    for p in phases:
-        for t in p.tasks:
-            if t.id == task_id:
-                task_name = t.name
-                if not phase_name:
-                    phase_name = p.name
-                phase_task_ids = [pt.id for pt in p.tasks]
-                break
-
-    if not task_name:
-        console.print(f"[red]Task {task_id} not found in PLAN.md[/red]")
-        raise typer.Exit(1)
+    task_name, phase_name, phase_task_ids = _resolve_task_from_plan(phases, task_id, phase)
 
     task_status = TaskStatus(status)
-
     state_mgr = StateManager(project_path / "STATE.md")
     cp_result = state_mgr.checkpoint(
         task_id=task_id,
@@ -1197,39 +1232,10 @@ def _do_checkpoint(
         phase_task_ids=phase_task_ids,
     )
 
-    icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[status]
-    console.print(f"[green][{icon}] {task_id}: {task_name}[/green]")
+    _print_checkpoint_result(task_id, task_name, status, notes, decisions, next_task, cp_result)
 
-    if notes:
-        console.print(f"  [dim]{notes}[/dim]")
-
-    if decisions:
-        console.print("  [cyan]Decisions:[/cyan]")
-        for d in decisions:
-            console.print(f"    • {d}")
-
-    if next_task:
-        console.print(f"  [yellow]Next → {next_task}[/yellow]")
-
-    if cp_result.phase_completed:
-        console.print(f"\n  [green bold]Phase complete: {cp_result.phase_name}[/green bold]")
-        console.print("  [yellow]Run `sago replan` before starting the next phase.[/yellow]")
-
-    # Create git tag for successful tasks
     if git_tag and task_status == TaskStatus.DONE:
-        import subprocess
-
-        tag_name = f"sago-checkpoint-{task_id}"
-        try:
-            subprocess.run(
-                ["git", "tag", tag_name],
-                cwd=project_path,
-                capture_output=True,
-                check=True,
-            )
-            console.print(f"  [dim]Tagged: {tag_name}[/dim]")
-        except subprocess.CalledProcessError:
-            console.print(f"  [yellow]Tag {tag_name} already exists or git not available[/yellow]")
+        _create_checkpoint_git_tag(project_path, task_id)
 
 
 @app.command()

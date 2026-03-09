@@ -274,6 +274,40 @@ class StateManager:
     # Write — public API
     # ------------------------------------------------------------------
 
+    def _insert_task_line(self, content: str, line: str) -> str:
+        """Insert a task line into the Completed Tasks section."""
+        completed_idx = content.index("## Completed Tasks")
+        rest = content[completed_idx + len("## Completed Tasks") :]
+        next_section = re.search(r"\n## ", rest)
+        if next_section:
+            insert_pos = completed_idx + len("## Completed Tasks") + next_section.start()
+            return content[:insert_pos] + "\n" + line + content[insert_pos:]
+        return content.rstrip("\n") + "\n" + line + "\n"
+
+    def _append_decisions(self, content: str, decisions: list[str]) -> str:
+        """Append decisions to the Key Decisions section."""
+        if "## Key Decisions" not in content:
+            content = content.rstrip("\n") + "\n\n## Key Decisions\n"
+        for decision in decisions:
+            if decision not in content:
+                content = content.rstrip("\n") + f"\n* {decision}\n"
+        return content
+
+    def _check_phase_complete(
+        self, phase_task_ids: list[str] | None, phase_name: str, status: TaskStatus
+    ) -> CheckpointResult:
+        """Check if all tasks in a phase are done and mark complete if so."""
+        result = CheckpointResult()
+        if phase_task_ids and phase_name and status == TaskStatus.DONE:
+            all_done = all(
+                self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids
+            )
+            if all_done:
+                self.mark_phase_complete(phase_name)
+                result.phase_completed = True
+                result.phase_name = phase_name
+        return result
+
     def checkpoint(
         self,
         task_id: str,
@@ -286,46 +320,23 @@ class StateManager:
         decisions: list[str] | None = None,
         phase_task_ids: list[str] | None = None,
     ) -> CheckpointResult:
-        """Record a task checkpoint — the primary state mutation.
-
-        Args:
-            task_id: Task identifier (e.g. "1.2")
-            task_name: Human-readable task name
-            status: done, failed, or skipped
-            notes: Free-text notes about what happened
-            phase_name: Current phase name (updates Current Context)
-            next_task: ID + name of the next task to work on
-            next_action: What to do next
-            decisions: Key decisions made during this task
-            phase_task_ids: All task IDs in the current phase (for auto phase detection)
-
-        Returns:
-            CheckpointResult indicating if phase was auto-completed
-        """
+        """Record a task checkpoint — the primary state mutation."""
         content = self._read()
         content = self._ensure_completed_section(content)
         content = self._remove_existing_task_line(content, task_id)
 
-        # Build the checkpoint line
+        # Build and insert the checkpoint line
         icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[status.value]
         line = f"[{icon}] {task_id}: {task_name}"
         if notes:
             line += f" — {notes}"
-
-        # Append to Completed Tasks section
-        completed_idx = content.index("## Completed Tasks")
-        rest = content[completed_idx + len("## Completed Tasks") :]
-        next_section = re.search(r"\n## ", rest)
-        if next_section:
-            insert_pos = completed_idx + len("## Completed Tasks") + next_section.start()
-            content = content[:insert_pos] + "\n" + line + content[insert_pos:]
-        else:
-            content = content.rstrip("\n") + "\n" + line + "\n"
+        content = self._insert_task_line(content, line)
 
         # Update Current Context
         if phase_name:
-            current_task_display = next_task if next_task else "None"
-            content = self._update_current_context(content, phase_name, current_task_display)
+            content = self._update_current_context(
+                content, phase_name, next_task or "None"
+            )
 
         # Update Resume Point
         failure_reason = notes if status == TaskStatus.FAILED else "None"
@@ -339,26 +350,11 @@ class StateManager:
             checkpoint=checkpoint_tag or "None",
         )
 
-        # Append decisions to a Key Decisions section
         if decisions:
-            if "## Key Decisions" not in content:
-                content = content.rstrip("\n") + "\n\n## Key Decisions\n"
-            for decision in decisions:
-                if decision not in content:
-                    content = content.rstrip("\n") + f"\n* {decision}\n"
+            content = self._append_decisions(content, decisions)
 
         self._write(content)
-
-        # Auto phase detection
-        result = CheckpointResult()
-        if phase_task_ids and phase_name and status == TaskStatus.DONE:
-            all_done = all(self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids)
-            if all_done:
-                self.mark_phase_complete(phase_name)
-                result.phase_completed = True
-                result.phase_name = phase_name
-
-        return result
+        return self._check_phase_complete(phase_task_ids, phase_name, status)
 
     def mark_phase_complete(self, phase_name: str) -> None:
         """Append a phase completion marker."""
