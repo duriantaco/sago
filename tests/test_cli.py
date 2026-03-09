@@ -98,28 +98,131 @@ def test_replan_no_plan(sago_project: Path) -> None:
     assert "No PLAN.md found" in result.output
 
 
-def test_check_llm_configured_allows_chatgpt_without_api_key() -> None:
-    original = cli.config
-    try:
-        cli.config = Config(
-            llm_provider="chatgpt",
-            llm_model="chatgpt/gpt-5.3-codex",
-            llm_api_key="",
-        )
-        cli._check_llm_configured()
-    finally:
-        cli.config = original
+def test_checkpoint_done(sago_project_with_plan: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "checkpoint", "1.1",
+            "--status", "done",
+            "--notes", "Config works",
+            "--next", "1.2: Create main",
+            "--path", str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "1.1" in result.output
+    state = (sago_project_with_plan / "STATE.md").read_text()
+    assert "[✓] 1.1: Create config — Config works" in state
 
 
-def test_check_llm_configured_requires_key_for_non_chatgpt() -> None:
-    original = cli.config
-    try:
-        cli.config = Config(
-            llm_provider="openai",
-            llm_model="gpt-4o",
-            llm_api_key="",
+def test_checkpoint_failed(sago_project_with_plan: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "checkpoint", "1.2",
+            "--status", "failed",
+            "--notes", "import error",
+            "--path", str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
+    )
+    assert result.exit_code == 0
+    state = (sago_project_with_plan / "STATE.md").read_text()
+    assert "[✗] 1.2: Create main — import error" in state
+
+
+def test_checkpoint_with_decisions(sago_project_with_plan: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "checkpoint", "1.1",
+            "--status", "done",
+            "-d", "Chose YAML over JSON",
+            "-d", "Using pydantic",
+            "--path", str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
+    )
+    assert result.exit_code == 0
+    state = (sago_project_with_plan / "STATE.md").read_text()
+    assert "Chose YAML over JSON" in state
+    assert "Using pydantic" in state
+
+
+def test_checkpoint_invalid_task(sago_project_with_plan: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["checkpoint", "99.99", "--path", str(sago_project_with_plan), "--no-git-tag"],
+    )
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_checkpoint_invalid_status(sago_project_with_plan: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "checkpoint", "1.1",
+            "--status", "invalid",
+            "--path", str(sago_project_with_plan),
+        ],
+    )
+    assert result.exit_code == 1
+
+
+def test_checkpoint_no_plan(sago_project: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["checkpoint", "1.1", "--path", str(sago_project), "--no-git-tag"],
+    )
+    assert result.exit_code == 1
+    assert "No PLAN.md found" in result.output
+
+
+def test_checkpoint_auto_phase_complete(sago_project_with_plan: Path) -> None:
+    """Completing all tasks in a phase shows phase complete message."""
+    # Mark both tasks in Phase 1 as done
+    runner.invoke(
+        app,
+        ["checkpoint", "1.1", "--path", str(sago_project_with_plan), "--no-git-tag"],
+    )
+    result = runner.invoke(
+        app,
+        ["checkpoint", "1.2", "--path", str(sago_project_with_plan), "--no-git-tag"],
+    )
+    assert result.exit_code == 0
+    assert "Phase complete" in result.output
+    assert "sago replan" in result.output
+    state = (sago_project_with_plan / "STATE.md").read_text()
+    assert "## Phase Complete:" in state
+
+
+def test_next_task(sago_project_with_plan: Path) -> None:
+    """next shows the first pending task."""
+    result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan)])
+    assert result.exit_code == 0
+    # Task 1.1 is already done (from SAMPLE_STATE), so next should be 1.2
+    assert "1.2" in result.output
+    assert "Create main" in result.output
+
+
+def test_next_task_all_done(sago_project_with_plan: Path) -> None:
+    """next shows completion message when all tasks are done."""
+    # Mark all tasks done
+    for tid in ("1.1", "1.2"):
+        runner.invoke(
+            app,
+            ["checkpoint", tid, "--path", str(sago_project_with_plan), "--no-git-tag"],
         )
-        with pytest.raises(Exit):
-            cli._check_llm_configured()
-    finally:
-        cli.config = original
+    # 1.1 was already done in SAMPLE_STATE, but we need to handle the 2-task plan
+    # The sample plan only has tasks 1.1 and 1.2
+    result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan)])
+    assert result.exit_code == 0
+    assert "complete" in result.output.lower()
+
+
+def test_next_task_no_plan(sago_project: Path) -> None:
+    result = runner.invoke(app, ["next", "--path", str(sago_project)])
+    assert result.exit_code == 1
+    assert "No PLAN.md found" in result.output

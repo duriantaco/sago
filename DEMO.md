@@ -15,6 +15,8 @@ Opens the live dashboard with sample data. Walk through the Feed and Log tabs.
 |---|---|
 | `sago init` | Scaffold a new project (PROJECT.md, REQUIREMENTS.md, CLAUDE.md, etc.) |
 | `sago plan` | Read PROJECT.md + REQUIREMENTS.md, call LLM, write PLAN.md with atomic tasks |
+| `sago checkpoint` | Record task progress in STATE.md (the agent calls this, not manual editing) |
+| `sago next` | Show the next actionable task with full details and context |
 | `sago status` | Show project progress including resume point |
 | `sago replan` | Update PLAN.md based on feedback without regenerating from scratch |
 | `sago watch` | Launch mission control dashboard to monitor your coding agent |
@@ -38,7 +40,7 @@ This creates:
 | `IMPORTANT.md` | Custom instructions for the coding agent | Template (user edits) |
 | `CLAUDE.md` | Instructions that teach coding agents how to follow the plan | Template |
 | `PLAN.md` | Placeholder — gets filled by `sago plan` | Template (then LLM overwrites) |
-| `STATE.md` | Progress tracker with resume point | Template (coding agent updates) |
+| `STATE.md` | Progress tracker with resume point | Template (`sago checkpoint` updates) |
 
 ### 2. Generate the plan
 
@@ -59,7 +61,7 @@ claude   # reads CLAUDE.md automatically
 ```
 
 **Cursor / Aider / other agents:**
-Open the project directory. The agent reads CLAUDE.md for instructions on how to follow the plan, update STATE.md, and maintain the resume point.
+Open the project directory. The agent reads CLAUDE.md for instructions on how to follow the plan and use `sago checkpoint` to record progress.
 
 ### 4. Monitor progress
 

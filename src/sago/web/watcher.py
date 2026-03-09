@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from sago.core.parser import MarkdownParser
 from sago.models.plan import Phase
+from sago.state import StateManager
 
 
 @dataclass
@@ -177,7 +177,6 @@ class ProjectWatcher:
     plan_phases: list[Phase]
     interval: float = 1.0
 
-    _parser: MarkdownParser = field(default_factory=MarkdownParser, init=False)
     _ignore_patterns: list[str] = field(default_factory=list, init=False)
     _plan_files: set[str] = field(default_factory=set, init=False)
     _baseline_mtimes: dict[str, float] = field(default_factory=dict, init=False)
@@ -276,16 +275,23 @@ class ProjectWatcher:
 
         if mtime != self._state_mtime or not self._cached_tasks:
             self._state_mtime = mtime
-            content = state_file.read_text(encoding="utf-8", errors="replace")
-            parsed = self._parser.parse_state_tasks(content, self.plan_phases)
+            state_mgr = StateManager(state_file)
+            task_states = state_mgr.get_task_states(self.plan_phases)
+
+            # Build task name/phase lookup from plan
+            task_info: dict[str, tuple[str, str]] = {}
+            for p in self.plan_phases:
+                for t in p.tasks:
+                    task_info[t.id] = (t.name, p.name)
+
             self._cached_tasks = [
                 TaskStatus(
-                    id=t["id"],
-                    name=t["name"],
-                    status=t["status"],  # type: ignore[arg-type]
-                    phase_name=t["phase_name"],
+                    id=ts.task_id,
+                    name=task_info.get(ts.task_id, (ts.task_id, ""))[0],
+                    status=ts.status.value,  # type: ignore[arg-type]
+                    phase_name=task_info.get(ts.task_id, ("", ""))[1],
                 )
-                for t in parsed
+                for ts in task_states
             ]
 
         return self._cached_tasks

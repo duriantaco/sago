@@ -6,6 +6,8 @@ from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import MarkdownParser
 from sago.models.execution import ExecutionHistory
 from sago.models.plan import Plan
+from sago.models.state import TaskStatus
+from sago.state import StateManager
 from sago.utils.tracer import tracer
 from sago.validation import PlanValidator, ValidationResult
 
@@ -134,25 +136,33 @@ Rules for modifying the plan:
     def _build_state_summary(self, project_path: Path, phases: list[Any]) -> str:
         """Build a summary of task states from STATE.md."""
         state_path = project_path / "STATE.md"
+        state_mgr = StateManager(state_path)
+
         if not state_path.exists():
             return "No STATE.md found — all tasks are PENDING."
 
-        state_content = state_path.read_text(encoding="utf-8")
-        task_states = self.parser.parse_state_tasks(state_content, phases)
+        task_states = state_mgr.get_task_states(phases)
+
+        # Build task-name lookup from phases
+        task_names: dict[str, str] = {}
+        for phase in phases:
+            for task in phase.tasks:
+                task_names[task.id] = task.name
 
         lines = []
         for ts in task_states:
-            status_label = ts["status"].upper()
-            lines.append(f"  {ts['id']}: {ts['name']} — {status_label}")
+            status_label = ts.status.value.upper()
+            name = task_names.get(ts.task_id, ts.task_id)
+            lines.append(f"  {ts.task_id}: {name} — {status_label}")
 
-        done = sum(1 for ts in task_states if ts["status"] == "done")
-        failed = sum(1 for ts in task_states if ts["status"] == "failed")
-        pending = sum(1 for ts in task_states if ts["status"] == "pending")
+        done = sum(1 for ts in task_states if ts.status == TaskStatus.DONE)
+        failed = sum(1 for ts in task_states if ts.status == TaskStatus.FAILED)
+        pending = sum(1 for ts in task_states if ts.status == TaskStatus.PENDING)
         summary_header = f"Task states: {done} done, {failed} failed, {pending} pending\n"
 
         result = summary_header + "\n".join(lines)
 
-        resume_point = self.parser.parse_resume_point(state_content)
+        resume_point = state_mgr.get_resume_point()
         if resume_point is not None:
             result += "\n\nResume context:"
             result += f"\n  Last completed: {resume_point.last_completed}"

@@ -1,10 +1,9 @@
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
 
 from sago.models.plan import Phase, Task
-from sago.models.state import Milestone, Requirement, ResumePoint
+from sago.models.state import Milestone, Requirement
 
 
 class MarkdownParser:
@@ -148,74 +147,6 @@ class MarkdownParser:
 
         return milestones
 
-    def parse_resume_point(self, content: str) -> ResumePoint | None:
-        """Parse the Resume Point section from STATE.md.
-
-        Returns None if the section is missing or all fields are "None".
-        """
-        match = re.search(r"## Resume Point\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
-        if not match:
-            return None
-
-        section = match.group(1)
-        fields: dict[str, str] = {}
-        for label in ("Last Completed", "Next Task", "Next Action", "Failure Reason", "Checkpoint"):
-            m = re.search(rf"\*\s*\*\*{re.escape(label)}:\*\*\s*(.*)", section)
-            fields[label] = m.group(1).strip() if m else "None"
-
-        if all(v == "None" for v in fields.values()):
-            return None
-
-        return ResumePoint(
-            last_completed=fields["Last Completed"],
-            next_task=fields["Next Task"],
-            next_action=fields["Next Action"],
-            failure_reason=fields["Failure Reason"],
-            checkpoint=fields["Checkpoint"],
-        )
-
-    def parse_state(self, content: str) -> dict[str, Any]:
-        """Parse current state from STATE.md.
-
-        Args:
-            content: Content of STATE.md file
-
-        Returns:
-            Dictionary with state information
-        """
-        state: dict[str, Any] = {
-            "active_phase": "",
-            "current_task": "",
-            "decisions": [],
-            "blockers": [],
-        }
-
-        current_section = ""
-        section_map = {
-            "### Current Context": "context",
-            "### Decisions Log": "decisions",
-            "### Known Blockers": "blockers",
-        }
-
-        for line in content.split("\n"):
-            line = line.strip()
-
-            if line.startswith("###"):
-                current_section = section_map.get(line, "")
-                continue
-
-            if current_section == "context":
-                if "Active Phase:" in line:
-                    state["active_phase"] = line.split("Active Phase:**", 1)[-1].strip()
-                elif "Current Task:" in line:
-                    state["current_task"] = line.split("Current Task:**", 1)[-1].strip()
-            elif current_section in ("decisions", "blockers") and line.startswith("*"):
-                state[current_section].append(line[1:].strip())
-
-        state["resume_point"] = self.parse_resume_point(content)
-
-        return state
-
     def parse_review_prompt(self, content: str) -> str:
         """Extract the <review> tag content from <phases> XML.
 
@@ -280,44 +211,6 @@ class MarkdownParser:
             if pkg.text and pkg.text.strip()
         ]
 
-    def parse_state_tasks(self, content: str, plan_phases: list[Phase]) -> list[dict[str, str]]:
-        """Parse STATE.md and match against plan tasks.
-
-        Returns list of {id, name, status: 'done'|'failed'|'pending', phase_name}
-        for every task in the plan. Tasks not mentioned in STATE.md are 'pending'.
-        """
-        done_ids: set[str] = set()
-        failed_ids: set[str] = set()
-
-        for line in content.split("\n"):
-            line = line.strip()
-            m = re.match(r"\[✓\]\s+(\d+\.\d+):", line)
-            if m:
-                done_ids.add(m.group(1))
-                continue
-            m = re.match(r"\[✗\]\s+(\d+\.\d+):", line)
-            if m:
-                failed_ids.add(m.group(1))
-
-        results: list[dict[str, str]] = []
-        for phase in plan_phases:
-            for task in phase.tasks:
-                if task.id in done_ids:
-                    status = "done"
-                elif task.id in failed_ids:
-                    status = "failed"
-                else:
-                    status = "pending"
-                results.append(
-                    {
-                        "id": task.id,
-                        "name": task.name,
-                        "status": status,
-                        "phase_name": phase.name,
-                    }
-                )
-        return results
-
     def parse_plan_file(self, file_path: Path) -> list[Phase]:
         content = file_path.read_text(encoding="utf-8")
         return self.parse_xml_tasks(content)
@@ -338,6 +231,3 @@ class MarkdownParser:
         content = file_path.read_text(encoding="utf-8")
         return self.parse_roadmap(content)
 
-    def parse_state_file(self, file_path: Path) -> dict[str, Any]:
-        content = file_path.read_text(encoding="utf-8")
-        return self.parse_state(content)

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.0] - 2026-03-09
+
+### Added
+- **`sago checkpoint` command** — structured CLI command for recording task progress. The coding agent calls `sago checkpoint 1.1 --notes "done" --next "1.2: Next task"` instead of manually editing STATE.md. Supports `--status done|failed|skipped`, `--notes`, `--next`, `--next-action`, repeatable `--decision` flags, and `--no-git-tag`
+- **`sago next` command** — shows the next actionable task based on PLAN.md + STATE.md. Finds the first pending task whose dependencies are all done, displays full task details (action, files, verify, done criteria), dependency status, and any previous failure context. Shows "All tasks complete!" or suggests `sago replan` when stuck
+- **`StateManager`** — new `src/sago/state.py` module that is the single authority for STATE.md reads AND writes. All state operations go through structured methods, guaranteeing format consistency regardless of LLM behavior
+- **Auto phase detection** — when `sago checkpoint` completes the last task in a phase, it automatically appends `## Phase Complete` to STATE.md and prompts the user to run `sago replan`
+- **State validation** — `StateManager.validate()` checks STATE.md for missing sections, duplicate task entries, and format integrity
+- **Key decisions tracking** — `sago checkpoint -d "Chose JWT over sessions"` appends architectural decisions to a `## Key Decisions` section in STATE.md, building a persistent record of design choices
+- **Idempotent checkpoints** — re-checkpointing the same task replaces the previous entry rather than duplicating it
+- **Tests** — 36 tests in `test_state.py`, 10 new CLI tests. Total suite: 347 passed
+
+### Changed
+- **CLAUDE.md template rewritten for checkpoint workflow** — coding agents are now instructed to use `sago checkpoint` instead of manually editing STATE.md. Added rule: "Never edit STATE.md directly." Removed manual markdown format instructions and Resume Point editing instructions
+- **STATE.md is now tool-owned** — the coding agent no longer needs to remember or maintain markdown formatting for state updates; sago owns the file format programmatically
+- **Consolidated state reading** — all STATE.md reading (previously spread across `MarkdownParser.parse_state()`, `parse_state_file()`, `parse_state_tasks()`, `parse_resume_point()`, and `_get_completed_task_ids()` in CLI) now goes through `StateManager`. Single source of truth for both reads and writes
+- **CLI internals use typed models** — `_show_recommendations()`, `_show_task_progress()`, `_get_phase_status()` now accept `list[TaskState]` instead of `list[dict[str, str]]`, eliminating stringly-typed state handling
+- **Replanner uses StateManager** — `_build_state_summary()` reads state via `StateManager` instead of parsing STATE.md directly
+- **Watcher uses StateManager** — `ProjectWatcher._parse_state()` reads state via `StateManager` instead of `MarkdownParser`
+
+### Removed
+- **Parser state methods** — `MarkdownParser.parse_state()`, `parse_state_file()`, `parse_state_tasks()`, `parse_resume_point()` deleted. The parser now only handles plan/requirements/roadmap/review parsing
+- **`_get_completed_task_ids()`** — standalone function in CLI replaced by `StateManager.completed_task_ids()`
+
 ## [0.2.2] - 2026-03-08
 
 ### Added

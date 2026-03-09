@@ -42,57 +42,35 @@ Each task in `PLAN.md` looks like this:
 - **verify** — run this command after implementation; it must exit 0
 - **done** — the acceptance criteria
 
-### Updating STATE.md
+### Recording progress with `sago checkpoint`
 
-After each task, append a line to STATE.md using this exact format:
-
-```markdown
-[✓] 1.1: Task name — brief notes
-```
-
-If a task fails:
-
-```markdown
-[✗] 1.1: Task name — what went wrong
-```
-
-**When you finish all tasks in a phase**, append this line to STATE.md:
-
-```markdown
-## Phase Complete: Phase 1: Foundation
-```
-
-Then run `sago replan` before starting the next phase. This reviews completed work and provides context for the remaining phases.
-
-### Maintaining the Resume Point
-
-After each task, update the `## Resume Point` section in STATE.md so you can resume efficiently if interrupted.
+**After each task**, run `sago checkpoint` to record progress. Do NOT edit STATE.md manually — the tool owns the file format.
 
 **After a successful task:**
 
-```markdown
-## Resume Point
-
-* **Last Completed:** 1.2: Add Configuration
-* **Next Task:** 2.1: Build CLI
-* **Next Action:** Create Typer CLI application
-* **Failure Reason:** None
-* **Checkpoint:** sago-checkpoint-1.2
+```bash
+sago checkpoint 1.1 --notes "Config module working" --next "1.2: Create main" --next-action "Create main module"
 ```
 
 **After a failed verification:**
 
-```markdown
-## Resume Point
-
-* **Last Completed:** 1.1: Initialize Project
-* **Next Task:** 1.2: Add Configuration (retry)
-* **Next Action:** Fix config loading for nested keys
-* **Failure Reason:** pytest tests/test_config.py exited 1 — KeyError on nested.key
-* **Checkpoint:** sago-checkpoint-1.1
+```bash
+sago checkpoint 1.2 --status failed --notes "pytest exited 1 — KeyError on nested.key" --next "1.2: Create main (retry)" --next-action "Fix config loading"
 ```
 
-After each successful task, create a git tag: `git tag sago-checkpoint-{task_id}` (e.g., `git tag sago-checkpoint-1.2`). This gives you a rollback point if a later task breaks something.
+**Recording key decisions:**
+
+```bash
+sago checkpoint 2.1 --notes "Auth system done" -d "Chose JWT over sessions" -d "Using bcrypt for passwords"
+```
+
+**When you finish all tasks in a phase**, run `sago replan` before starting the next phase. This reviews completed work and provides context for the remaining phases.
+
+The checkpoint command automatically:
+- Updates STATE.md with the task result
+- Maintains the Resume Point for crash recovery
+- Creates a git tag (`sago-checkpoint-{task_id}`) on success
+- Tracks key architectural decisions
 
 ## Rules
 
@@ -100,5 +78,6 @@ After each successful task, create a git tag: `git tag sago-checkpoint-{task_id}
 - Follow task dependencies — check `depends_on` to determine task order. Tasks without `depends_on` depend on all prior tasks in their phase.
 - If a `<dependencies>` block exists in PLAN.md, install those packages before starting Phase 1.
 - Every task must pass its verify command before you move on.
-- If you're stuck on a task, document the blocker in STATE.md and move to the next task.
+- **Never edit STATE.md directly.** Always use `sago checkpoint` to record progress.
+- If you're stuck on a task, run `sago checkpoint <id> --status failed --notes "blocker description"` and move on.
 - Run `sago replan` between phases for review and context carry-forward.

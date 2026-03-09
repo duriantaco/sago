@@ -4,7 +4,7 @@ sago - Spec-Aware Generation Orchestrator
 Turns markdown specs into working code via multi-agent LLM pipeline.
 """
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 __author__ = "oha"
 __license__ = "Apache-2.0"
 
