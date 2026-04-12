@@ -1,7 +1,8 @@
 """
 sago - Spec-Aware Generation Orchestrator
 
-Turns markdown specs into working code via multi-agent LLM pipeline.
+Turns markdown specs into structured project plans for coding agents.
+The expanded name is historical; the active product scope is planning and control-plane tooling.
 """
 
 __version__ = "0.3.0"

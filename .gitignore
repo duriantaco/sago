@@ -34,6 +34,9 @@ htmlcov/
 .tox/
 .nox/
 
+# Type checking
+.mypy_cache/
+
 # IDEs
 .vscode/
 .idea/
@@ -45,9 +48,8 @@ htmlcov/
 .env
 .env.local
 
-# Planning artifacts
-.planning/*
-!.planning/.gitkeep
+# Planning artifacts (user-generated, not part of sago source)
+.planning/
 
 # Logs
 *.log
@@ -57,16 +59,18 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Skylos cache
+# Linter / quality caches
 .skylos/
-
-# Ruff cache
 .ruff_cache/
 
 # Backup files
 *.bak
 *.backup
 
+# Compression chunks (generated cache)
+src/sago/chunks/
+
+# Root-level project files (user projects, not sago source)
 /PROJECT.md
 /REQUIREMENTS.md
 /ROADMAP.md
@@ -74,8 +78,3 @@ Thumbs.db
 /PLAN.md
 /SUMMARY.md
 /IMPORTANT.md
-
-.planning
-
-src/sago/chunks/
-.mypy_cache/

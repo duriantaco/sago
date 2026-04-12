@@ -52,7 +52,13 @@ def _failed_workflow(duration: float, error: str, total_tasks: int = 0) -> Workf
     )
 
 
-class Orchestrator:
+class PlanningWorkflow:
+    """Coordinates Sago's planning, review, and replanning workflows.
+
+    This class does not execute product tasks or apply task-level code changes.
+    Those responsibilities belong to the user's coding agent.
+    """
+
     def __init__(self, config: Config | None = None) -> None:
         self.config = config or Config()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -69,16 +75,26 @@ class Orchestrator:
         self.planner = PlannerAgent(config=self.config, llm_client=planner_llm)
         self.replanner = ReplannerAgent(config=self.config, llm_client=planner_llm)
 
-        judge_llm = LLMClient(
-            model=self.config.effective_judge_model,
-            api_key=self.config.get_judge_api_key(),
-            temperature=self.config.llm_temperature,
-            max_tokens=self.config.llm_max_tokens,
-        )
-        self.reviewer = ReviewerAgent(config=self.config, llm_client=judge_llm)
+        # Reviewer is created lazily so that __init__ never touches keyring.
+        self._reviewer: ReviewerAgent | None = None
 
         self.parser = MarkdownParser()
         self.project_manager = ProjectManager(self.config)
+
+    @property
+    def reviewer(self) -> ReviewerAgent:
+        """Lazy-init the reviewer agent (and its judge LLM client)."""
+        if self._reviewer is None:
+            from sago.utils.llm import LLMClient
+
+            judge_llm = LLMClient(
+                model=self.config.effective_judge_model,
+                api_key=self.config.get_judge_api_key(),
+                temperature=self.config.llm_temperature,
+                max_tokens=self.config.llm_max_tokens,
+            )
+            self._reviewer = ReviewerAgent(config=self.config, llm_client=judge_llm)
+        return self._reviewer
 
     async def run_workflow(
         self,
@@ -103,7 +119,7 @@ class Orchestrator:
 
         tracer.emit(
             "workflow_start",
-            "Orchestrator",
+            "PlanningWorkflow",
             {"project_path": str(project_path), "flags": {"plan": plan}},
         )
 
@@ -124,11 +140,11 @@ class Orchestrator:
             )
 
         except ValueError as e:
-            tracer.emit("error", "Orchestrator", {"error_type": "workflow", "message": str(e)})
+            tracer.emit("error", "PlanningWorkflow", {"error_type": "workflow", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
         except Exception as e:
             self.logger.error(f"Workflow failed: {e}", exc_info=True)
-            tracer.emit("error", "Orchestrator", {"error_type": "workflow", "message": str(e)})
+            tracer.emit("error", "PlanningWorkflow", {"error_type": "workflow", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
         finally:
             tracer.close()
@@ -177,7 +193,7 @@ class Orchestrator:
 
         tracer.emit(
             "workflow_start",
-            "Orchestrator",
+            "PlanningWorkflow",
             {"project_path": str(project_path), "flags": {"replan": True}},
         )
 
@@ -200,11 +216,11 @@ class Orchestrator:
             phases = self._load_plan_phases(project_path)
             all_tasks = [task for phase in phases for task in phase.tasks]
         except ValueError as e:
-            tracer.emit("error", "Orchestrator", {"error_type": "replan", "message": str(e)})
+            tracer.emit("error", "PlanningWorkflow", {"error_type": "replan", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
         except Exception as e:
             self.logger.error(f"Replan workflow failed: {e}", exc_info=True)
-            tracer.emit("error", "Orchestrator", {"error_type": "replan", "message": str(e)})
+            tracer.emit("error", "PlanningWorkflow", {"error_type": "replan", "message": str(e)})
             return _failed_workflow(_elapsed(), str(e))
         finally:
             tracer.close()
@@ -258,3 +274,7 @@ class Orchestrator:
         all_tasks = [task for phase in phases for task in phase.tasks]
         self.logger.info(f"Found {len(all_tasks)} tasks across {len(phases)} phases")
         return phases
+
+
+# Backwards-compatible alias for older imports. Prefer PlanningWorkflow in new code.
+Orchestrator = PlanningWorkflow

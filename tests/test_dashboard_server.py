@@ -1,11 +1,10 @@
 import json
-from http.client import HTTPConnection
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from sago.web.server import start_watch_server
+from sago.web.server import route_request
 
 
 def _make_mock_watcher() -> MagicMock:
@@ -67,40 +66,27 @@ def trace_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def server(trace_file: Path, tmp_path: Path):
-    watcher = _make_mock_watcher()
-    plan_data = {"project_name": "test", "phases": [], "dependencies": []}
-    srv = start_watch_server(
-        project_path=tmp_path,
-        watcher=watcher,
-        plan_data=plan_data,
-        trace_path=trace_file,
-        port=0,
-        open_browser=False,
-    )
-    port = srv.server_address[1]
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
-    yield conn, srv
-    srv.shutdown()
-    conn.close()
+def ctx(trace_file: Path, tmp_path: Path) -> dict:
+    """Shared keyword args for route_request()."""
+    return {
+        "watcher": _make_mock_watcher(),
+        "plan_data": {"project_name": "test", "phases": [], "dependencies": []},
+        "trace_path": trace_file,
+        "project_path": tmp_path,
+    }
 
 
-def test_server_serves_html(server: tuple) -> None:
-    conn, _srv = server
-    conn.request("GET", "/")
-    resp = conn.getresponse()
+def test_serves_html(ctx: dict) -> None:
+    resp = route_request("/", "", **ctx)
     assert resp.status == 200
-    body = resp.read().decode()
-    assert "Sago Watch" in body
-    assert "text/html" in resp.getheader("Content-Type", "")
+    assert "text/html" in resp.content_type
+    assert b"Sago Watch" in resp.body
 
 
-def test_server_returns_events(server: tuple) -> None:
-    conn, _srv = server
-    conn.request("GET", "/api/events?after=0")
-    resp = conn.getresponse()
+def test_returns_events(ctx: dict) -> None:
+    resp = route_request("/api/events", "after=0", **ctx)
     assert resp.status == 200
-    data = json.loads(resp.read())
+    data = json.loads(resp.body)
     assert "events" in data
     assert "cursor" in data
     assert len(data["events"]) == 3
@@ -108,63 +94,55 @@ def test_server_returns_events(server: tuple) -> None:
     assert data["events"][0]["event_type"] == "workflow_start"
 
 
-def test_server_after_parameter(server: tuple) -> None:
-    conn, _srv = server
-
-    conn.request("GET", "/api/events?after=2")
-    resp = conn.getresponse()
+def test_after_parameter(ctx: dict) -> None:
+    resp = route_request("/api/events", "after=2", **ctx)
     assert resp.status == 200
-    data = json.loads(resp.read())
+    data = json.loads(resp.body)
     assert len(data["events"]) == 1
     assert data["events"][0]["event_type"] == "llm_call"
     assert data["cursor"] == 3
 
-    conn.request("GET", "/api/events?after=3")
-    resp = conn.getresponse()
-    data = json.loads(resp.read())
-    assert len(data["events"]) == 0
-    assert data["cursor"] == 3
+    resp2 = route_request("/api/events", "after=3", **ctx)
+    data2 = json.loads(resp2.body)
+    assert len(data2["events"]) == 0
+    assert data2["cursor"] == 3
 
 
-def test_server_empty_trace(tmp_path: Path) -> None:
-    empty_path = tmp_path / "empty.jsonl"
-    watcher = _make_mock_watcher()
-    plan_data = {"project_name": "test", "phases": [], "dependencies": []}
-    srv = start_watch_server(
-        project_path=tmp_path,
-        watcher=watcher,
-        plan_data=plan_data,
-        trace_path=empty_path,
-        port=0,
-        open_browser=False,
-    )
-    port = srv.server_address[1]
-    conn = HTTPConnection("127.0.0.1", port, timeout=5)
-    try:
-        conn.request("GET", "/api/events?after=0")
-        resp = conn.getresponse()
-        assert resp.status == 200
-        data = json.loads(resp.read())
-        assert data["events"] == []
-    finally:
-        srv.shutdown()
-        conn.close()
+def test_invalid_after_parameter_returns_400(ctx: dict) -> None:
+    resp = route_request("/api/events", "after=abc", **ctx)
+    assert resp.status == 400
+    data = json.loads(resp.body)
+    assert "error" in data
 
 
-def test_server_watch_state(server: tuple) -> None:
-    conn, _srv = server
-    conn.request("GET", "/api/watch/state")
-    resp = conn.getresponse()
+def test_empty_trace(tmp_path: Path) -> None:
+    ctx = {
+        "watcher": _make_mock_watcher(),
+        "plan_data": {"project_name": "test", "phases": [], "dependencies": []},
+        "trace_path": tmp_path / "empty.jsonl",
+        "project_path": tmp_path,
+    }
+    resp = route_request("/api/events", "after=0", **ctx)
     assert resp.status == 200
-    data = json.loads(resp.read())
+    data = json.loads(resp.body)
+    assert data["events"] == []
+
+
+def test_watch_state(ctx: dict) -> None:
+    resp = route_request("/api/watch/state", "", **ctx)
+    assert resp.status == 200
+    data = json.loads(resp.body)
     assert "tasks" in data
     assert "progress" in data
 
 
-def test_server_watch_plan(server: tuple) -> None:
-    conn, _srv = server
-    conn.request("GET", "/api/watch/plan")
-    resp = conn.getresponse()
+def test_watch_plan(ctx: dict) -> None:
+    resp = route_request("/api/watch/plan", "", **ctx)
     assert resp.status == 200
-    data = json.loads(resp.read())
+    data = json.loads(resp.body)
     assert data["project_name"] == "test"
+
+
+def test_not_found(ctx: dict) -> None:
+    resp = route_request("/nonexistent", "", **ctx)
+    assert resp.status == 404

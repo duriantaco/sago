@@ -11,7 +11,6 @@ def test_config_default_values() -> None:
     config = Config(_env_file=None)  # type: ignore[call-arg]
     assert config.llm_provider == "anthropic"
     assert config.llm_temperature == 0.1
-    assert config.enable_git_commits is True
     assert config.log_level == "INFO"
 
 

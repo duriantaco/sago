@@ -5,11 +5,17 @@ from typing import Any
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import MarkdownParser
 from sago.models.execution import ExecutionHistory
-from sago.models.plan import Plan
 from sago.models.state import TaskStatus
 from sago.state import StateManager
+from sago.utils.planning import (
+    extract_xml_from_response,
+    format_validation_errors,
+    sanitize_xml,
+    save_plan,
+    validate_plan_semantics,
+    validate_xml_structure,
+)
 from sago.utils.tracer import tracer
-from sago.validation import PlanValidator, ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +92,17 @@ Rules for modifying the plan:
             review_context=review_context,
             execution_summary=execution_summary,
         )
-        updated_xml = self._sanitize_xml(updated_xml)
-        self._validate_xml(updated_xml)
+        updated_xml = sanitize_xml(updated_xml)
+        validate_xml_structure(updated_xml)
 
-        validation = self._validate_plan_semantics(updated_xml)
+        validation = validate_plan_semantics(updated_xml, self.parser)
         if not validation.valid:
             self.logger.warning("Replan has validation errors, retrying with feedback")
-            error_feedback = self._format_validation_errors(validation)
+            error_feedback = format_validation_errors(validation)
             updated_xml = await self._retry_with_feedback(current_xml, error_feedback)
-            updated_xml = self._sanitize_xml(updated_xml)
-            self._validate_xml(updated_xml)
-            validation = self._validate_plan_semantics(updated_xml)
+            updated_xml = sanitize_xml(updated_xml)
+            validate_xml_structure(updated_xml)
+            validation = validate_plan_semantics(updated_xml, self.parser)
             if not validation.valid:
                 error_msgs = "; ".join(i.message for i in validation.errors)
                 raise ValueError(f"Replan has validation errors after retry: {error_msgs}")
@@ -105,7 +111,7 @@ Rules for modifying the plan:
             for w in validation.warnings:
                 self.logger.warning(f"Replan warning: {w.message}")
 
-        self._save_plan(plan_path, updated_xml)
+        save_plan(plan_path, updated_xml, agent_name="ReplannerAgent")
 
         return self._create_result(
             status=AgentStatus.SUCCESS,
@@ -297,55 +303,7 @@ Generate the complete updated plan now:""",
         ]
 
         response = await self._call_llm(messages)
-
-        content: str = response["content"]
-        xml_start = content.find("<phases>")
-        xml_end = content.find("</phases>") + len("</phases>")
-
-        if xml_start == -1 or xml_end < len("</phases>"):
-            raise ValueError("Replan response does not contain valid XML structure")
-
-        return content[xml_start:xml_end]
-
-    def _sanitize_xml(self, xml_str: str) -> str:
-        """Fix common XML issues from LLM output."""
-        import re as _re
-
-        xml_str = _re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#)", "&amp;", xml_str)
-        return xml_str
-
-    def _validate_xml(self, plan_xml: str) -> None:
-        """Validate basic XML structure."""
-        if "<phases>" not in plan_xml or "</phases>" not in plan_xml:
-            raise ValueError("Plan missing <phases> tags")
-        if "<phase" not in plan_xml:
-            raise ValueError("Plan has no phases")
-        if "<task" not in plan_xml:
-            raise ValueError("Plan has no tasks")
-
-        import xml.etree.ElementTree as ET
-
-        try:
-            ET.fromstring(plan_xml)
-        except ET.ParseError as e:
-            raise ValueError(f"Invalid XML structure: {e}") from e
-
-        self.logger.info("Updated plan XML validated successfully")
-
-    def _validate_plan_semantics(self, plan_xml: str) -> ValidationResult:
-        """Parse XML into Plan model and run semantic validation."""
-        phases = self.parser.parse_xml_tasks(plan_xml)
-        plan = Plan(phases=phases)
-        validator = PlanValidator()
-        return validator.validate(plan)
-
-    def _format_validation_errors(self, validation: ValidationResult) -> str:
-        """Format validation errors as feedback for LLM retry."""
-        lines = ["The generated plan has the following errors that must be fixed:"]
-        for issue in validation.errors:
-            loc = f" (task {issue.task_id})" if issue.task_id else ""
-            lines.append(f"  - {issue.code}{loc}: {issue.message}")
-        return "\n".join(lines)
+        return extract_xml_from_response(response["content"])
 
     async def _retry_with_feedback(
         self,
@@ -367,60 +325,4 @@ Generate the complete updated plan now:""",
             },
         ]
         response = await self._call_llm(messages)
-        content: str = response["content"]
-        xml_start = content.find("<phases>")
-        xml_end = content.find("</phases>") + len("</phases>")
-        if xml_start == -1 or xml_end < len("</phases>"):
-            raise ValueError("Retry response does not contain valid XML structure")
-        return content[xml_start:xml_end]
-
-    def _save_plan(self, plan_path: Path, plan_xml: str) -> None:
-        content = f"""# PLAN.md
-
-> **CRITICAL COMPONENT:** This file uses a specific XML schema to force the AI into "Atomic Task" mode.
-
-```xml
-{plan_xml}
-```
-
-## Task Structure Schema
-
-The `<phases>` block contains:
-- **`<dependencies>`** (optional): Lists third-party packages needed by the project. Each package is a `<package>` element with optional version constraints (e.g. `flask>=2.0`).
-- **`<review>`** (optional): Instructions for post-phase code review. If present, a review runs automatically after each phase completes and feedback carries forward to the next phase.
-
-Each `<task>` has attributes:
-- **id:** Unique identifier (phase.task format)
-- **depends_on:** (optional) Comma-separated task IDs this task depends on. Omit to depend on all prior tasks in the phase.
-
-Each `<task>` must contain child elements:
-- **name:** Clear, actionable task name
-- **files:** Specific files to create/modify
-- **action:** Detailed implementation instructions
-- **verify:** Command to verify task completion
-- **done:** Acceptance criteria
-
-## Execution Rules
-
-1. **Follow task dependencies** - Check `depends_on` to determine task order. Tasks without `depends_on` depend on all prior tasks in their phase.
-2. **Parallel between phases** - Independent phases can run concurrently
-3. **Verify before proceeding** - Each task must pass verification
-4. **Update STATE.md** - Log progress after each task
-5. **Atomic commits** - One commit per completed task
-
----
-
-*Updated by sago ReplannerAgent*
-"""
-
-        plan_path.write_text(content, encoding="utf-8")
-        self.logger.info(f"Updated plan saved to {plan_path}")
-        tracer.emit(
-            "file_write",
-            "ReplannerAgent",
-            {
-                "path": str(plan_path.name),
-                "size_bytes": len(content.encode("utf-8")),
-                "content_preview": content[:2000],
-            },
-        )
+        return extract_xml_from_response(response["content"])

@@ -110,14 +110,13 @@ class BaseAgent(ABC):
         Returns:
             System prompt string
         """
-        return f"""You are a {self.__class__.__name__}.
+        return f"""You are a {self.__class__.__name__} in the sago planning system.
 
 Rules:
-- Generate complete, working code — never pseudocode, stubs, or TODO comments
-- Match the existing project's style, naming conventions, and patterns
-- Every file you output must be syntactically valid and immediately runnable
-- Only output what was asked for — no extra files, no unsolicited refactoring
-- If the task specifies a verification command, your output MUST pass it
+- Stay within your assigned role (planning, replanning, or review)
+- Be concrete, specific, and deterministic
+- Only output what was requested for the current step
+- Do not invent results you did not derive from the provided context
 """
 
     def _build_prompt(self, task: str, context: str, output_format: str) -> list[dict[str, str]]:

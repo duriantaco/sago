@@ -17,11 +17,10 @@ class ReviewerAgent(BaseAgent):
         return """You are a senior code reviewer auditing completed work from a project phase.
 
 Rules:
-- Generate complete, working code — never pseudocode, stubs, or TODO comments
-- Match the existing project's style, naming conventions, and patterns
-- Every file you output must be syntactically valid and immediately runnable
-- Only output what was asked for — no extra files, no unsolicited refactoring
-- If the task specifies a verification command, your output MUST pass it
+- Review the code that already exists in the project; do not invent new features
+- Focus on correctness, requirement alignment, edge cases, security, and maintainability
+- Be specific and actionable, with file and line references when possible
+- Separate critical issues, warnings, and suggestions clearly
 """
 
     async def execute(self, context: dict[str, Any]) -> AgentResult:

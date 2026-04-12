@@ -58,6 +58,9 @@ def test_tracer_span_tracks_duration(fresh_tracer: Tracer, tmp_trace: Path) -> N
     end = json.loads(lines[1])
     assert start["event_type"] == "llm_call_start"
     assert end["event_type"] == "llm_call_end"
+    assert start["span_id"] == end["span_id"]
+    assert start["parent_span_id"] is None
+    assert end["parent_span_id"] is None
     assert end["duration_ms"] is not None
     assert end["duration_ms"] >= 0
     assert end["data"]["duration_ms"] >= 0
@@ -76,6 +79,27 @@ def test_tracer_parent_span_nesting(fresh_tracer: Tracer, tmp_trace: Path) -> No
 
     lines = tmp_trace.read_text().strip().splitlines()
     assert len(lines) == 3  # outer_start, inner_event, outer_end
+
+
+def test_tracer_nested_span_reuses_span_ids(fresh_tracer: Tracer, tmp_trace: Path) -> None:
+    fresh_tracer.configure(tmp_trace)
+
+    with fresh_tracer.span("outer", "Agent") as outer:
+        with fresh_tracer.span("inner", "Agent") as inner:
+            assert inner.span_id != outer.span_id
+
+    fresh_tracer.close()
+
+    outer_start, inner_start, inner_end, outer_end = [
+        json.loads(line) for line in tmp_trace.read_text().strip().splitlines()
+    ]
+
+    assert outer_start["span_id"] == outer.span_id
+    assert outer_end["span_id"] == outer.span_id
+    assert inner_start["span_id"] == inner.span_id
+    assert inner_end["span_id"] == inner.span_id
+    assert inner_start["parent_span_id"] == outer.span_id
+    assert inner_end["parent_span_id"] == outer.span_id
 
 
 def test_tracer_close_and_reset(fresh_tracer: Tracer, tmp_trace: Path) -> None:

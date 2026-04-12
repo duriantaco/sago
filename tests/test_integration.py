@@ -1,5 +1,6 @@
 """Integration tests: end-to-end workflow through the CLI with mocked LLM."""
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -69,8 +70,8 @@ def test_plan_generates_plan(sago_project: Path) -> None:
         return mock_result
 
     with (
-        patch("sago.cli._check_llm_configured"),
-        patch("sago.cli._check_placeholder_content"),
+        patch("sago.commands.plan_cmd.check_llm_configured"),
+        patch("sago.commands.plan_cmd.check_placeholder_content", return_value=[]),
         patch(
             "sago.agents.planner.PlannerAgent.execute",
             new_callable=AsyncMock,
@@ -82,6 +83,38 @@ def test_plan_generates_plan(sago_project: Path) -> None:
     assert result.exit_code == 0
     assert "Plan generated successfully" in result.output
     assert (sago_project / "PLAN.md").exists()
+
+
+def test_plan_generates_plan_json(sago_project: Path) -> None:
+    """sago plan --json should emit structured output."""
+    from sago.agents.base import AgentResult, AgentStatus
+
+    mock_result = AgentResult(
+        status=AgentStatus.SUCCESS,
+        output="Plan generated",
+        metadata={"plan_path": str(sago_project / "PLAN.md")},
+    )
+
+    def fake_planner_execute(_context: dict) -> AgentResult:
+        (sago_project / "PLAN.md").write_text(SAMPLE_PLAN)
+        return mock_result
+
+    with (
+        patch("sago.commands.plan_cmd.check_llm_configured"),
+        patch("sago.commands.plan_cmd.check_placeholder_content", return_value=[]),
+        patch(
+            "sago.agents.planner.PlannerAgent.execute",
+            new_callable=AsyncMock,
+            side_effect=fake_planner_execute,
+        ),
+    ):
+        result = runner.invoke(app, ["plan", "--path", str(sago_project), "--force", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["success"] is True
+    assert payload["plan_path"].endswith("PLAN.md")
+    assert payload["phase_count"] >= 1
 
 
 def test_status_after_plan(sago_project_with_plan: Path) -> None:
@@ -123,7 +156,7 @@ def test_replan_one_shot(sago_project_with_plan: Path) -> None:
     )
 
     with (
-        patch("sago.cli._check_llm_configured"),
+        patch("sago.commands.replan_cmd.check_llm_configured"),
         patch(
             "sago.agents.replanner.ReplannerAgent.execute",
             new_callable=AsyncMock,
@@ -183,8 +216,8 @@ def test_full_workflow_init_plan_status(tmp_path: Path) -> None:
         return mock_result
 
     with (
-        patch("sago.cli._check_llm_configured"),
-        patch("sago.cli._check_placeholder_content"),
+        patch("sago.commands.plan_cmd.check_llm_configured"),
+        patch("sago.commands.plan_cmd.check_placeholder_content", return_value=[]),
         patch(
             "sago.agents.planner.PlannerAgent.execute",
             new_callable=AsyncMock,
