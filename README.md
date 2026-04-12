@@ -3,7 +3,7 @@
 <div align="center">
     <img src="assets/sago.png" alt="Sago - AI project planning and orchestration" width="300">
     <h1>Sago: The project planner for AI coding agents</h1>
-    <h3>You describe what you want in markdown. Sago generates a structured plan. Your coding agent (Claude Code, Cursor, Aider, etc.) builds it.</h3>
+    <h3>You describe the project in markdown. Sago generates and maintains the plan. Your coding agent (Claude Code, Codex, Cursor, Aider, etc.) builds it.</h3>
 </div>
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
@@ -14,13 +14,18 @@
 
 ## What sago does
 
-Sago is a **planning and orchestration tool**, not a coding agent. It turns your project idea into a structured, verified plan — then gets out of the way and lets a real coding agent do the building.
+Sago is a **planning and control-plane tool**, not a coding agent. It turns your project idea into a structured, verified plan, tracks progress across phases, and then gets out of the way so a real coding agent can do the building.
 
 ```
 You → sago init → sago plan → coding agent builds Phase 1 → sago replan → coding agent builds Phase 2 → ...
 ```
 
-**Why?** AI coding agents (Claude Code, Cursor, etc.) are excellent at writing code but bad at planning entire projects from scratch. They lose track of requirements, skip steps, and produce inconsistent architectures. Sago solves the planning problem so the coding agent can focus on what it's good at — writing code.
+**Why?** AI coding agents (Claude Code, Codex, Cursor, etc.) are excellent at writing code but bad at planning entire projects from scratch. They lose track of requirements, skip steps, and produce inconsistent architectures. Sago owns the spec, plan, and phase gates so the coding agent can focus on writing code.
+
+Sago does not execute project tasks itself. The intended workflow is:
+- Sago defines the work (`PROJECT.md`, `REQUIREMENTS.md`, `PLAN.md`)
+- Your coding agent executes the work
+- Sago records state, reviews completed phases, and updates the plan
 
 ---
 
@@ -31,7 +36,7 @@ You → sago init → sago plan → coding agent builds Phase 1 → sago replan 
 - [Using with Claude Code](#using-with-claude-code)
 - [Using with other agents](#using-with-other-agents)
 - [Mission control](#mission-control)
-- [Trace dashboard](#trace-dashboard)
+- [Trace Events](#trace-events)
 - [Commands](#commands)
 - [Configuration](#configuration)
 - [Task format](#task-format)
@@ -63,7 +68,7 @@ LLM_MODEL=gpt-4o
 LLM_API_KEY=sk-your-key-here
 ```
 
-Any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) works — OpenAI, Anthropic, Azure, Gemini, etc. The LLM is used for **plan generation only**.
+Any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) works — OpenAI, Anthropic, Azure, Gemini, etc. The LLM is used for planning and review, not for task execution.
 
 For ChatGPT subscription access via LiteLLM, use the ChatGPT route model (OAuth device flow, no API key required):
 
@@ -109,6 +114,8 @@ Sago reads your `PROJECT.md` and `REQUIREMENTS.md`, detects your environment (Py
 
 Sago validates the plan automatically — if it finds structural errors (cycles, invalid dependencies, missing task IDs), it retries once with error feedback. You're shown validation results and asked to accept or reject before the plan is written.
 
+Use `sago plan --yes` for fully non-interactive plan generation. It now skips both the final accept/reject prompt and the placeholder-content warning that normally protects untouched template files.
+
 ### 5. Hand off to your coding agent
 
 Point your coding agent at the project and tell it to follow the plan:
@@ -121,7 +128,7 @@ claude
 ```
 
 **Cursor / Other agents:**
-Open the project directory. The agent should read `PLAN.md` and execute tasks in order, running each `<verify>` command to confirm the task is done.
+Open the project directory. The agent should read `PLAN.md` and execute tasks in order, running each `<verify>` command and then `sago checkpoint` to record progress.
 
 ### 6. Watch your agent work
 
@@ -141,7 +148,7 @@ After your coding agent finishes a phase, run the phase gate:
 sago replan
 ```
 
-This reviews the completed work, shows findings (warnings, suggestions), saves the review to STATE.md, shows actionable recommendations (e.g. "task failed 2+ times — consider replanning"), and optionally lets you adjust the plan before the next phase. Just press Enter to skip replanning if the review looks good.
+This reviews completed phases only, shows findings (warnings, suggestions), saves the review to STATE.md, shows actionable recommendations (e.g. "task failed 2+ times — consider replanning"), and optionally lets you adjust the plan before the next phase. Just press Enter to skip replanning if the review looks good.
 
 ### 8. Track progress
 
@@ -149,6 +156,7 @@ This reviews the completed work, shows findings (warnings, suggestions), saves t
 sago status              # quick summary + recommendations
 sago status -d           # detailed per-task breakdown
 sago lint-plan           # validate plan without running anything
+sago doctor              # check project + environment health
 ```
 
 ---
@@ -295,16 +303,23 @@ The dashboard shows:
 - **Dependencies** — packages listed in PLAN.md
 - **Per-phase progress bars** — at a glance, which phases are done
 
-It polls STATE.md every second — as `sago checkpoint` records task results, the dashboard updates automatically. No extra dependencies (stdlib HTTP server + `os.stat`).
+It polls STATE.md every second — as `sago checkpoint` records task results, the dashboard updates automatically. No extra dependencies (stdlib HTTP server + `os.stat`). Mission control also reads trace data from the target project's own `.planning/trace.jsonl`, so `sago watch --path ./other-project` no longer leaks runtime artifacts into your current shell directory.
 
-## Trace dashboard
+## Trace Events
 
-To view the planning trace after `sago plan`:
+Mission control already includes a `Trace` tab. To capture plan/replan events, enable tracing in your environment:
 
 ```bash
-sago trace                   # opens dashboard for the last trace
-sago trace --demo            # sample data, no API key needed
+ENABLE_TRACING=true
 ```
+
+Then run `sago plan` or `sago replan`, followed by:
+
+```bash
+sago watch
+```
+
+The dashboard will read `.planning/trace.jsonl` and show the live event feed when trace data is present. Trace spans now keep stable `span_id` values across paired `*_start` / `*_end` events, which makes the feed easier to consume from external tooling.
 
 ---
 
@@ -324,13 +339,13 @@ sago next                            # show next actionable task with full detai
 sago lint-plan                       # validate PLAN.md for structural/semantic issues
 sago lint-plan --strict              # treat warnings as errors
 sago lint-plan --json                # machine-readable JSON output
+sago doctor                          # run project and environment diagnostics
+sago judge                           # configure the judge/reviewer model
 sago replan                          # phase gate: review completed work, optionally update plan
 sago watch                           # launch mission control dashboard
 sago watch --port 8080               # use a specific port
 sago status                          # show project progress + recommendations
 sago status -d                       # detailed per-task breakdown
-sago trace                           # open dashboard for the last trace
-sago trace --demo                    # open dashboard with sample data
 ```
 
 ### Flags for `sago plan`
@@ -338,8 +353,7 @@ sago trace --demo                    # open dashboard with sample data
 | Flag | What it does |
 |---|---|
 | `--force` / `-f` | Regenerate PLAN.md if it already exists |
-| `--yes` / `-y` | Auto-accept plan without confirmation prompt |
-| `--trace` | Open live dashboard during planning |
+| `--yes` / `-y` | Fully non-interactive plan generation: skips the placeholder warning and the final confirmation prompt |
 
 ---
 
@@ -441,7 +455,7 @@ Tasks in `PLAN.md` use XML inside markdown:
 
 **When to use GSD:** You use Claude Code exclusively and want a fully automated pipeline — research, plan, execute, verify — all within Claude Code's sub-agent system. GSD's context rotation (fresh windows per task) is its killer feature for large projects.
 
-**When to use sago:** You want to use different coding agents (or switch between them), want to use a non-Claude LLM for planning, or prefer an explicit human-in-the-loop workflow where you review the plan and gate phase transitions yourself. Sago is the project manager; you pick the developer.
+**When to use sago:** You want to use different coding agents (or switch between them), want to use a non-Claude LLM for planning, or prefer an explicit human-in-the-loop workflow where you review the plan and gate phase transitions yourself. Sago is the project manager and control plane; you pick the developer.
 
 ---
 
