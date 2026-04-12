@@ -48,7 +48,7 @@ class Tracer:
         tracer.configure(Path(".planning/trace.jsonl"))
         tracer.emit("file_read", "PlannerAgent", {"path": "PROJECT.md", "size_bytes": 1024})
 
-        with tracer.span("llm_call", "ExecutorAgent", {"model": "gpt-4o"}):
+        with tracer.span("llm_call", "PlannerAgent", {"model": "gpt-4o"}):
             ...  # duration measured automatically
 
         tracer.close()
@@ -104,20 +104,24 @@ class Tracer:
         agent: str,
         data: dict[str, Any] | None = None,
         duration_ms: float | None = None,
+        *,
+        span_id: str | None = None,
+        parent_span_id: str | None = None,
+        inherit_parent: bool = True,
     ) -> TraceEvent | None:
         if not self._enabled:
             return None
 
-        parent_span_id = self._current_parent_span_id()
+        resolved_parent_span_id = self._current_parent_span_id() if inherit_parent else parent_span_id
 
         event = TraceEvent(
             event_type=event_type,
             timestamp=datetime.now(UTC).isoformat(),
             trace_id=self._trace_id,
-            span_id=uuid.uuid4().hex[:16],
+            span_id=span_id or uuid.uuid4().hex[:16],
             agent=agent,
             data=data or {},
-            parent_span_id=parent_span_id,
+            parent_span_id=resolved_parent_span_id,
             duration_ms=duration_ms,
         )
 
@@ -153,6 +157,7 @@ class Tracer:
 
         span_id = uuid.uuid4().hex[:16]
         start_ns = time.monotonic_ns()
+        parent_span_id = self._current_parent_span_id()
 
         state = _SpanState(
             span_id=span_id,
@@ -165,7 +170,14 @@ class Tracer:
         stack = self._get_span_stack()
         stack.append(span_id)
 
-        self.emit(f"{event_type}_start", agent, data)
+        self.emit(
+            f"{event_type}_start",
+            agent,
+            data,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            inherit_parent=False,
+        )
 
         try:
             yield state
@@ -177,7 +189,15 @@ class Tracer:
 
             end_data = dict(state.data)
             end_data["duration_ms"] = round(duration_ms, 2)
-            self.emit(f"{event_type}_end", agent, end_data, duration_ms=duration_ms)
+            self.emit(
+                f"{event_type}_end",
+                agent,
+                end_data,
+                duration_ms=duration_ms,
+                span_id=span_id,
+                parent_span_id=parent_span_id,
+                inherit_parent=False,
+            )
 
     def _get_span_stack(self) -> list[str]:
         if not hasattr(self._span_stack, "stack"):

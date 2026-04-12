@@ -163,21 +163,27 @@ class TestPlannerValidation:
             assert result.status == AgentStatus.FAILURE
             assert "validation errors" in (result.error or "").lower()
 
-    def test_validate_plan_semantics(self, planner: PlannerAgent) -> None:
+    def test_validate_plan_semantics(self) -> None:
         """Semantic validation should catch errors in parsed plan."""
-        result = planner._validate_plan_semantics(VALID_XML)
+        from sago.utils.planning import validate_plan_semantics
+
+        result = validate_plan_semantics(VALID_XML)
         assert result.valid
 
-    def test_validate_plan_semantics_duplicate_ids(self, planner: PlannerAgent) -> None:
+    def test_validate_plan_semantics_duplicate_ids(self) -> None:
         """Semantic validation should catch duplicate IDs."""
-        result = planner._validate_plan_semantics(INVALID_XML_DUPLICATE_IDS)
+        from sago.utils.planning import validate_plan_semantics
+
+        result = validate_plan_semantics(INVALID_XML_DUPLICATE_IDS)
         assert not result.valid
         assert any(i.code == "DUPLICATE_ID" for i in result.errors)
 
-    def test_format_validation_errors(self, planner: PlannerAgent) -> None:
+    def test_format_validation_errors(self) -> None:
         """Error formatting should include issue details."""
-        result = planner._validate_plan_semantics(INVALID_XML_DUPLICATE_IDS)
-        feedback = planner._format_validation_errors(result)
+        from sago.utils.planning import format_validation_errors, validate_plan_semantics
+
+        result = validate_plan_semantics(INVALID_XML_DUPLICATE_IDS)
+        feedback = format_validation_errors(result)
         assert "DUPLICATE_ID" in feedback
         assert "must be fixed" in feedback
 
