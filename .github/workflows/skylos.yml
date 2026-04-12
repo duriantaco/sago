@@ -21,14 +21,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Skylos
-        run: pip install skylos
+      - name: Install fyn
+        run: pip install fyn
 
-      - name: Install project
-        run: pip install -e ".[dev]"
+      - name: Sync project environment
+        run: fyn sync --group dev
 
       - name: Run tests for coverage data
-        run: pytest --tb=no -q
+        run: fyn run test -- --tb=no -q
 
       - name: Run Skylos Analysis
-        run: skylos . --gate --quality --danger --exclude-folder tests --exclude-folder examples
+        run: fyn run --with skylos skylos . --gate --quality --danger --exclude-folder tests --exclude-folder examples
