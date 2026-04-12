@@ -22,6 +22,7 @@ from sago.models.plan import Plan
 from sago.models.state import ProjectState, TaskState, TaskStatus
 from sago.recommendations import RecommendationEngine
 from sago.state import StateManager
+from sago.utils.agent_context import load_agent_context
 
 
 def _show_task_progress(phases: list[Phase], task_states: list[TaskState], detailed: bool) -> None:
@@ -88,6 +89,15 @@ def _show_resume_point(state: ProjectState) -> None:
     console.print(rp_table)
 
 
+def _show_agent_context(agent_context: dict[str, Any]) -> None:
+    """Print detected repo-local agent context files."""
+    if not agent_context["present"]:
+        return
+
+    filenames = ", ".join(entry["path"] for entry in agent_context["files"])
+    console.print(f"\n[bold]Agent Context:[/bold] {filenames}")
+
+
 def _show_status_next_steps(has_plan: bool) -> None:
     """Print next-steps guidance based on whether a plan exists."""
     if has_plan:
@@ -103,7 +113,7 @@ def _show_status_next_steps(has_plan: bool) -> None:
 
 def _load_status_context(
     project_path: Path,
-) -> tuple[dict[str, Any], list[Phase], ProjectState | None, str | None]:
+) -> tuple[dict[str, Any], list[Phase], ProjectState | None, str | None, dict[str, Any]]:
     cfg = load_config(project_path)
     manager = ProjectManager(cfg)
     parser = MarkdownParser()
@@ -117,6 +127,7 @@ def _load_status_context(
         raise ValueError(f"Not a sago project: {project_path}")
 
     info = manager.get_project_info(project_path)
+    agent_context = load_agent_context(project_path).to_summary_dict()
     state_mgr = StateManager(project_path / "STATE.md")
 
     plan_file = project_path / "PLAN.md"
@@ -129,11 +140,15 @@ def _load_status_context(
             plan_error = str(e)
 
     state = state_mgr.get_project_state(phases) if phases else None
-    return info, phases, state, plan_error
+    return info, phases, state, plan_error, agent_context
 
 
 def _build_status_payload(
-    info: dict[str, Any], phases: list[Phase], state: ProjectState | None, plan_error: str | None
+    info: dict[str, Any],
+    phases: list[Phase],
+    state: ProjectState | None,
+    plan_error: str | None,
+    agent_context: dict[str, Any],
 ) -> dict[str, Any]:
     has_plan = bool(phases)
     task_states = state.task_states if state else []
@@ -153,6 +168,7 @@ def _build_status_payload(
     return {
         "success": True,
         "project": info,
+        "agent_context": agent_context,
         "has_plan": has_plan,
         "plan_error": plan_error,
         "state": state.model_dump() if state else None,
@@ -173,9 +189,10 @@ def _build_status_payload(
 
 
 def _do_status(project_path: Path, detailed: bool) -> None:
-    info, phases, state, plan_error = _load_status_context(project_path)
+    info, phases, state, plan_error, agent_context = _load_status_context(project_path)
 
     _show_status_overview(info, state)
+    _show_agent_context(agent_context)
 
     if plan_error is not None:
         console.print(f"\n[yellow]Could not parse PLAN.md: {plan_error}[/yellow]")
@@ -202,9 +219,11 @@ def status(
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     try:
-        info, phases, state, plan_error = _load_status_context(project_path)
+        info, phases, state, plan_error, agent_context = _load_status_context(project_path)
         if json_output:
-            print_json_output(_build_status_payload(info, phases, state, plan_error))
+            print_json_output(
+                _build_status_payload(info, phases, state, plan_error, agent_context)
+            )
             return
         _do_status(project_path, detailed)
     except Exception as e:

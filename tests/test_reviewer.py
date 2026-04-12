@@ -181,6 +181,17 @@ class TestReviewerAgent:
         assert "def hello():" in ctx
         assert "src/app.py" in ctx
 
+    def test_build_review_context_includes_agent_context(
+        self, reviewer: ReviewerAgent, sample_phase: Phase, tmp_path: Path
+    ) -> None:
+        (tmp_path / "SKILLS.md").write_text("# Skills\n- Prefer incremental refactors\n")
+
+        ctx = reviewer._build_review_context(sample_phase, tmp_path)
+
+        assert "AGENT CONTEXT" in ctx
+        assert "SKILLS.md" in ctx
+        assert "Prefer incremental refactors" in ctx
+
     def test_build_review_context_missing_file(
         self, reviewer: ReviewerAgent, tmp_path: Path
     ) -> None:

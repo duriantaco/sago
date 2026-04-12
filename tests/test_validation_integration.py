@@ -187,6 +187,24 @@ class TestPlannerValidation:
         assert "DUPLICATE_ID" in feedback
         assert "must be fixed" in feedback
 
+    @pytest.mark.asyncio
+    async def test_agent_context_is_included_in_plan_prompt(
+        self, planner: PlannerAgent, tmp_path: Path
+    ) -> None:
+        (tmp_path / "PROJECT.md").write_text("# Test Project")
+        (tmp_path / "REQUIREMENTS.md").write_text("# Requirements\n* Do stuff")
+        (tmp_path / "SKILLS.md").write_text("# Skills\n- Strong at CLI workflows\n")
+
+        with patch.object(planner, "_call_llm", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = {"content": VALID_XML}
+
+            result = await planner.execute({"project_path": tmp_path})
+
+            assert result.status == AgentStatus.SUCCESS
+            user_msg = mock_llm.call_args[0][0][1]["content"]
+            assert "SKILLS.md" in user_msg
+            assert "Strong at CLI workflows" in user_msg
+
 
 class TestReplannerValidation:
     @pytest.mark.asyncio
@@ -221,6 +239,24 @@ class TestReplannerValidation:
 
             assert result.status == AgentStatus.SUCCESS
             assert mock_llm.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_agent_context_is_included_in_replan_prompt(
+        self, replanner: ReplannerAgent, project_with_plan: Path
+    ) -> None:
+        (project_with_plan / "SKILLS.md").write_text("# Skills\n- Great at migrations\n")
+
+        with patch.object(replanner, "_call_llm", new_callable=AsyncMock) as mock_llm:
+            mock_llm.return_value = {"content": VALID_XML}
+
+            result = await replanner.execute(
+                {"project_path": project_with_plan, "feedback": "add logging"}
+            )
+
+            assert result.status == AgentStatus.SUCCESS
+            user_msg = mock_llm.call_args[0][0][1]["content"]
+            assert "SKILLS.md" in user_msg
+            assert "Great at migrations" in user_msg
 
 
 class TestExecutionHistoryInReplan:

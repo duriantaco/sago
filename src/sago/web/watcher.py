@@ -192,7 +192,16 @@ class _IgnoreFilter:
         return False
 
 
-_MD_FILES = ["PROJECT.md", "REQUIREMENTS.md", "PLAN.md", "STATE.md", "IMPORTANT.md"]
+_MD_FILES = [
+    "PROJECT.md",
+    "REQUIREMENTS.md",
+    "PLAN.md",
+    "STATE.md",
+    "IMPORTANT.md",
+    "AGENTS.md",
+    "SKILLS.md",
+    "CLAUDE.md",
+]
 
 
 @dataclass

@@ -5,6 +5,7 @@ from typing import Any
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
+from sago.utils.agent_context import load_agent_context
 from sago.utils.planning import (
     extract_xml_from_response,
     format_validation_errors,
@@ -34,6 +35,7 @@ Rules:
 - Verification commands must be real, runnable shell commands (pytest, python -c, etc.)
 - Action descriptions must be detailed enough for a code-generation agent to implement without guessing
 - Only plan what the requirements ask for — no extra features or speculative tasks
+- Honor any repo-local agent context files (IMPORTANT.md, AGENTS.md, SKILLS.md, CLAUDE.md, .cursorrules) when present
 """
 
     async def execute(self, context: dict[str, Any]) -> AgentResult:
@@ -88,52 +90,55 @@ Rules:
         )
 
     def _load_project_context(self, project_path: Path) -> dict[str, str]:
-        context = {}
+        context: dict[str, str] = {}
 
-        required_files = ["PROJECT.md", "REQUIREMENTS.md"]
-        optional_files = ["IMPORTANT.md", "STATE.md"]
-
-        for filename in required_files:
+        for filename in ["PROJECT.md", "REQUIREMENTS.md", "STATE.md"]:
             file_path = project_path / filename
-            if file_path.exists():
-                try:
-                    context[filename] = file_path.read_text(encoding="utf-8")
-                    self.logger.debug(f"Loaded {filename}: {len(context[filename])} chars")
-                    tracer.emit(
-                        "file_read",
-                        "PlannerAgent",
-                        {
-                            "path": filename,
-                            "size_bytes": len(context[filename].encode("utf-8")),
-                            "content_preview": context[filename][:2000],
-                        },
-                    )
-                except Exception as e:
+            if not file_path.exists():
+                if filename != "STATE.md":
+                    self.logger.warning(f"File not found: {filename}")
+                    context[filename] = ""
+                else:
+                    self.logger.debug(f"Optional file not present: {filename}")
+                continue
+
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except Exception as e:
+                if filename != "STATE.md":
                     self.logger.warning(f"Could not load {filename}: {e}")
                     context[filename] = ""
-            else:
-                self.logger.warning(f"File not found: {filename}")
-                context[filename] = ""
-
-        for filename in optional_files:
-            file_path = project_path / filename
-            if file_path.exists():
-                try:
-                    context[filename] = file_path.read_text(encoding="utf-8")
-                    self.logger.debug(f"Loaded {filename}: {len(context[filename])} chars")
-                    tracer.emit(
-                        "file_read",
-                        "PlannerAgent",
-                        {
-                            "path": filename,
-                            "size_bytes": len(context[filename].encode("utf-8")),
-                            "content_preview": context[filename][:2000],
-                        },
-                    )
-                except Exception as e:
+                else:
                     self.logger.debug(f"Could not load optional {filename}: {e}")
-            else:
-                self.logger.debug(f"Optional file not present: {filename}")
+                continue
+
+            context[filename] = content
+            self.logger.debug(f"Loaded {filename}: {len(content)} chars")
+            tracer.emit(
+                "file_read",
+                "PlannerAgent",
+                {
+                    "path": filename,
+                    "size_bytes": len(content.encode("utf-8")),
+                    "content_preview": content[:2000],
+                },
+            )
+
+        agent_context = load_agent_context(project_path)
+        if agent_context.present:
+            context["AGENT_CONTEXT"] = agent_context.to_prompt_block()
+            for entry in agent_context.files:
+                tracer.emit(
+                    "file_read",
+                    "PlannerAgent",
+                    {
+                        "path": entry.path,
+                        "size_bytes": len(entry.content.encode("utf-8")),
+                        "content_preview": entry.content[:2000],
+                    },
+                )
+        for error in agent_context.errors:
+            self.logger.warning(f"Could not load agent context file: {error}")
 
         from sago.utils.repo_map import generate_repo_map
 

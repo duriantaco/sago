@@ -24,6 +24,7 @@ You → sago init → sago plan → coding agent builds Phase 1 → sago replan 
 
 Sago does not execute project tasks itself. The intended workflow is:
 - Sago defines the work (`PROJECT.md`, `REQUIREMENTS.md`, `PLAN.md`)
+- Sago reads repo-local agent context (`IMPORTANT.md`, `AGENTS.md`, `SKILLS.md`, `CLAUDE.md`, `.cursorrules`) when present
 - Your coding agent executes the work
 - Sago records state, reviews completed phases, and updates the plan
 
@@ -462,15 +463,17 @@ Tasks in `PLAN.md` use XML inside markdown:
 ## Development
 
 ```bash
-pip install -e ".[dev]"       # install with dev dependencies
+fyn sync --group dev          # install the project and dev dependencies
 
-pytest                        # run all tests
-pytest tests/test_parser.py -v              # single file
-pytest tests/test_parser.py::test_name -v   # single test
+fyn run test                  # run all tests
+fyn run test -- tests/test_parser.py -v              # single file
+fyn run test -- tests/test_parser.py::test_name -v   # single test
 
-ruff check src/               # lint
-black src/ tests/             # format
-mypy src/                     # type check (strict mode)
+fyn run lint                  # lint
+fyn run format                # format
+fyn run format-check          # formatting check
+fyn run typecheck             # type check (strict mode)
+fyn run check                 # full local quality gate
 skylos src/                   # dead code detection
 ```
 

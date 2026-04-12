@@ -4,6 +4,7 @@ from typing import Any
 
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.models import Phase
+from sago.utils.agent_context import load_agent_context
 from sago.utils.paths import safe_resolve
 from sago.utils.tracer import tracer
 
@@ -21,6 +22,7 @@ Rules:
 - Focus on correctness, requirement alignment, edge cases, security, and maintainability
 - Be specific and actionable, with file and line references when possible
 - Separate critical issues, warnings, and suggestions clearly
+- Honor repo-local agent context files (IMPORTANT.md, AGENTS.md, SKILLS.md, CLAUDE.md, .cursorrules) when present
 """
 
     async def execute(self, context: dict[str, Any]) -> AgentResult:
@@ -112,6 +114,12 @@ Rules:
             content = self._read_file_truncated(ctx_path, context_file, max_chars=4000)
             if content is not None:
                 parts.append(f"\n=== {context_file} ===\n{content}")
+
+        agent_context = load_agent_context(project_path, max_chars_per_file=4000)
+        if agent_context.present:
+            parts.append("\n=== AGENT CONTEXT ===")
+            for entry in agent_context.files:
+                parts.append(f"\n--- {entry.path} ({entry.kind}) ---\n{entry.content}")
 
         return "\n".join(parts)
 

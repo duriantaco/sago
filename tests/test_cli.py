@@ -120,6 +120,11 @@ def test_status_json(sago_project_with_plan: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["success"] is True
+    assert payload["agent_context"]["present"] is True
+    assert {entry["path"] for entry in payload["agent_context"]["files"]} >= {
+        "IMPORTANT.md",
+        "CLAUDE.md",
+    }
     assert payload["has_plan"] is True
     assert payload["task_summary"]["completed"] >= 1
     assert payload["phases"]
@@ -304,6 +309,7 @@ def test_next_task_json(sago_project_with_plan: Path) -> None:
     payload = json.loads(result.output)
     assert payload["success"] is True
     assert payload["state"] == "task"
+    assert payload["agent_context"]["present"] is True
     assert payload["task"]["id"] == "1.2"
 
 
@@ -355,7 +361,14 @@ def test_doctor_json(sago_project_with_plan: Path) -> None:
     payload = json.loads(result.output)
     assert payload["summary"]["fail"] == 0
     check_names = {check["name"] for check in payload["checks"]}
-    assert {"project_path", "project_files", "dashboard_asset", "plan", "state"} <= check_names
+    assert {
+        "project_path",
+        "project_files",
+        "agent_context",
+        "dashboard_asset",
+        "plan",
+        "state",
+    } <= check_names
 
 
 def test_doctor_missing_path_does_not_create_planning_dir(

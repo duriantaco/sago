@@ -48,6 +48,10 @@ htmlcov/
 .env
 .env.local
 
+# Local package-manager lockfiles not tracked by this repo
+uv.lock
+fyn.lock
+
 # Planning artifacts (user-generated, not part of sago source)
 .planning/
 
