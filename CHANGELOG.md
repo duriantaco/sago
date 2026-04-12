@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **`is_sago_project()` now requires both files** — changed from `any()` to `all()`: a directory is only considered a sago project when BOTH `PROJECT.md` and `REQUIREMENTS.md` are present. Previously, having either file was enough.
+
+### Fixed
+- **Stable trace spans** — `Tracer.span()` now emits matching `span_id` values for paired `*_start` / `*_end` events and preserves the correct parent span for nested events, fixing broken mission control trace hierarchies
+- **Completed-phase review gate** — `sago replan` now reviews completed phases only, preventing partial phases from being reviewed early and then skipped once they actually finish
+- **Fully non-interactive `sago plan --yes`** — the `--yes` flag now skips the placeholder-content confirmation as well as the final accept/reject prompt, making agent and CI runs deterministic
+- **Project-local planning artifacts** — loading config for `--path /some/project` now resolves relative runtime paths against that project, so `.planning` and related files are created under the target project instead of the caller's current directory
+- **Mission control cursor validation** — `/api/events` now returns a clean `400` for invalid `after` cursors instead of throwing a server-side exception
+- **Skipped task accounting** — phase summaries and `sago next` now treat skipped tasks as resolved instead of incorrectly counting them as pending forever
+- **CLI exit handling** — command wrappers now re-raise `typer.Exit` cleanly instead of printing spurious `Error: 1` messages for expected early exits
+
+### Documentation
+- Clarified in the README that `sago plan --yes` is fully non-interactive
+- Clarified that `sago replan` reviews completed phases only
+- Documented project-local trace storage and stable trace span IDs for mission control consumers
+
 ## [0.3.0] - 2026-03-09
 
 ### Added

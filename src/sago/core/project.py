@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectManager:
+    REQUIRED_PROJECT_FILES = ["PROJECT.md", "REQUIREMENTS.md"]
     TEMPLATE_FILES = [
         "PROJECT.md",
         "REQUIREMENTS.md",
@@ -136,6 +137,89 @@ class ProjectManager:
             (project_path / filename).write_text(file_content, encoding="utf-8")
             logger.info(f"Wrote generated {filename} ({len(file_content)} chars)")
 
+    async def generate_from_codebase(
+        self,
+        codebase_context: dict[str, str],
+        project_path: Path,
+        project_name: str,
+        requirements_hint: str | None = None,
+    ) -> None:
+        """Generate PROJECT.md and REQUIREMENTS.md by analyzing an existing codebase.
+
+        Args:
+            codebase_context: Dict of context signals (repo_map, config_files, readme, etc.)
+            project_path: Path to the existing project
+            project_name: Name of the project
+            requirements_hint: Optional hint about what the user wants to build next
+        """
+        from sago.utils.llm import LLMClient
+
+        client = LLMClient(
+            model=self.config.llm_model,
+            api_key=self.config.llm_api_key or None,
+            temperature=self.config.llm_temperature,
+            max_tokens=self.config.llm_max_tokens,
+        )
+
+        context_str = "\n\n".join(
+            f"=== {key.upper()} ===\n{value}" for key, value in codebase_context.items() if value
+        )
+
+        hint_section = ""
+        if requirements_hint:
+            hint_section = (
+                f"\n\nThe user wants to work on the following next:\n{requirements_hint}\n"
+                "Use this to guide what goes in REQUIREMENTS.md — focus on what they want to "
+                "build or change, not what already exists."
+            )
+
+        system_prompt = (
+            "You are a software architect analyzing an existing codebase.\n"
+            "Your job is to produce two markdown files that accurately describe the project "
+            "as it exists today, plus what should be built next.\n\n"
+            "Use exactly this format — no extra commentary:\n\n"
+            "=== FILE: PROJECT.md ===\n"
+            "(full PROJECT.md content)\n\n"
+            "=== FILE: REQUIREMENTS.md ===\n"
+            "(full REQUIREMENTS.md content)\n\n"
+            "PROJECT.md must have:\n"
+            "  # <project name>\n"
+            "  ## Project Vision — what this project does (derived from the code, not guessed)\n"
+            "  ## Tech Stack & Constraints — languages, frameworks, tools (from config files)\n"
+            "  ## Core Architecture — modules, data flow, key patterns (from repo map)\n\n"
+            "REQUIREMENTS.md must have:\n"
+            "  # <project name> Requirements\n"
+            "  ## V1 Requirements (MVP) — use * [ ] **REQ-N:** format\n"
+            "  These should be FORWARD-LOOKING requirements — things to build, fix, or improve.\n"
+            "  Do NOT list things that are already complete.\n"
+            "  If the user provided a hint about what to work on, focus requirements on that.\n"
+            "  If no hint, infer reasonable next steps from the codebase (missing tests, "
+            "TODOs, incomplete features, missing docs, etc.).\n"
+            "  ## V2 Requirements (Future) — stretch goals\n\n"
+            "Be precise. Derive facts from the code — do not hallucinate features or structure."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Project name: {project_name}\n\n"
+                    f"Codebase analysis:\n{context_str}"
+                    f"{hint_section}"
+                ),
+            },
+        ]
+
+        response = client.chat_completion(messages)
+        content = response["content"]
+
+        generated = self._parse_generated_files(content)
+
+        for filename, file_content in generated.items():
+            (project_path / filename).write_text(file_content, encoding="utf-8")
+            logger.info(f"Wrote generated {filename} ({len(file_content)} chars)")
+
     @staticmethod
     def _parse_generated_files(content: str) -> dict[str, str]:
         files: dict[str, str] = {}
@@ -191,5 +275,12 @@ class ProjectManager:
         if not project_path.exists():
             return False
 
-        required_files = ["PROJECT.md", "REQUIREMENTS.md"]
-        return any((project_path / f).exists() for f in required_files)
+        return not self.missing_required_files(project_path)
+
+    def missing_required_files(self, project_path: Path) -> list[str]:
+        project_path = Path(project_path)
+        return [f for f in self.REQUIRED_PROJECT_FILES if not (project_path / f).exists()]
+
+    def has_any_required_files(self, project_path: Path) -> bool:
+        project_path = Path(project_path)
+        return any((project_path / f).exists() for f in self.REQUIRED_PROJECT_FILES)
