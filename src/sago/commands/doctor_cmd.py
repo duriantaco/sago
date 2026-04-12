@@ -15,6 +15,7 @@ from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
 from sago.models.plan import Plan
 from sago.state import StateManager
+from sago.utils.agent_context import load_agent_context
 from sago.validation import PlanValidator
 
 
@@ -74,6 +75,41 @@ def _run_doctor(project_path: Path) -> dict[str, Any]:
             model=cfg.llm_model,
         )
     )
+
+    agent_context = load_agent_context(project_path)
+    if agent_context.errors:
+        checks.append(
+            _check(
+                "agent_context",
+                "warn",
+                (
+                    f"Detected {len(agent_context.files)} agent context file(s) "
+                    f"with {len(agent_context.errors)} read warning(s)"
+                ),
+                files=[entry.to_summary_dict() for entry in agent_context.files],
+                errors=agent_context.errors,
+            )
+        )
+    elif agent_context.present:
+        checks.append(
+            _check(
+                "agent_context",
+                "pass",
+                f"Detected {len(agent_context.files)} agent context file(s)",
+                files=[entry.to_summary_dict() for entry in agent_context.files],
+            )
+        )
+    else:
+        checks.append(
+            _check(
+                "agent_context",
+                "warn",
+                (
+                    "No repo-local agent context files detected "
+                    "(IMPORTANT.md, AGENTS.md, SKILLS.md, CLAUDE.md, .cursorrules)"
+                ),
+            )
+        )
 
     try:
         import keyring

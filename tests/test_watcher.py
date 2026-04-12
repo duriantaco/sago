@@ -291,6 +291,7 @@ def test_plan_file_tracking(project_dir: Path) -> None:
 def test_md_files_in_poll(project_dir: Path) -> None:
     """Poll should include md_files with content for existing .md files."""
     (project_dir / "PLAN.md").write_text("# Plan\n\n## Phase 1\n- Task A\n")
+    (project_dir / "CLAUDE.md").write_text("# CLAUDE.md\nRead PLAN.md first.\n")
     phases = _make_phases()
     watcher = ProjectWatcher(project_path=project_dir, plan_phases=phases)
 
@@ -301,6 +302,7 @@ def test_md_files_in_poll(project_dir: Path) -> None:
     assert "PROJECT.md" in filenames
     assert "REQUIREMENTS.md" in filenames
     assert "PLAN.md" in filenames
+    assert "CLAUDE.md" in filenames
     # STATE.md doesn't exist so it shouldn't appear
     assert "STATE.md" not in filenames
 

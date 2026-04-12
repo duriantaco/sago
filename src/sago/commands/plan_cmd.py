@@ -20,6 +20,7 @@ from sago.commands import (
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
 from sago.models.plan import Plan
+from sago.utils.agent_context import load_agent_context
 from sago.validation import PlanValidator
 
 # Distinctive strings from the placeholder templates
@@ -85,10 +86,12 @@ def _build_plan_payload(project_path: Path) -> dict[str, object]:
     phases = parser.parse_xml_tasks(plan_file.read_text(encoding="utf-8"))
     dependencies = parser.parse_dependencies(plan_file.read_text(encoding="utf-8"))
     validation = PlanValidator().validate(Plan(phases=phases))
+    agent_context = load_agent_context(project_path).to_summary_dict()
     return {
         "success": True,
         "project_path": project_path,
         "plan_path": plan_file,
+        "agent_context": agent_context,
         "phase_count": len(phases),
         "task_count": sum(len(phase.tasks) for phase in phases),
         "dependencies": dependencies,
@@ -131,6 +134,7 @@ def _do_plan(
     placeholder_files = check_placeholder_content(
         project_path, auto_continue=auto_accept or json_output
     )
+    agent_context = load_agent_context(project_path).to_summary_dict()
 
     orchestrator = PlanningWorkflow(config=cfg)
 
@@ -165,6 +169,9 @@ def _do_plan(
 
     console.print("\n[green]Plan generated successfully![/green]")
     console.print(f"   {plan_file}\n")
+    if agent_context["present"]:
+        file_list = ", ".join(entry["path"] for entry in agent_context["files"])
+        console.print(f"[bold]Agent context used:[/bold] {file_list}\n")
 
     show_plan_summary(project_path)
 

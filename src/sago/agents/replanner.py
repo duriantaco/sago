@@ -7,6 +7,7 @@ from sago.core.parser import MarkdownParser
 from sago.models.execution import ExecutionHistory
 from sago.models.state import TaskStatus
 from sago.state import StateManager
+from sago.utils.agent_context import load_agent_context
 from sago.utils.planning import (
     extract_xml_from_response,
     format_validation_errors,
@@ -44,6 +45,7 @@ Rules for modifying the plan:
 - Verification commands must be real, runnable shell commands
 - Action descriptions must be detailed enough for a code-generation agent to implement
 - Only plan what the requirements ask for — no extra features or speculative tasks
+- Honor any repo-local agent context files (IMPORTANT.md, AGENTS.md, SKILLS.md, CLAUDE.md, .cursorrules) when present
 """
 
     async def execute(self, context: dict[str, Any]) -> AgentResult:
@@ -208,7 +210,7 @@ Rules for modifying the plan:
     def _load_project_context(
         self, project_path: Path, skip_repo_map: bool = False
     ) -> dict[str, str]:
-        """Load project context files (PROJECT.md, REQUIREMENTS.md) and repo map."""
+        """Load project context files, agent context, and optionally repo map."""
         context: dict[str, str] = {}
         for filename in ["PROJECT.md", "REQUIREMENTS.md"]:
             file_path = project_path / filename
@@ -226,6 +228,22 @@ Rules for modifying the plan:
                     )
                 except Exception as e:
                     self.logger.warning(f"Could not load {filename}: {e}")
+
+        agent_context = load_agent_context(project_path)
+        if agent_context.present:
+            context["AGENT_CONTEXT"] = agent_context.to_prompt_block()
+            for entry in agent_context.files:
+                tracer.emit(
+                    "file_read",
+                    "ReplannerAgent",
+                    {
+                        "path": entry.path,
+                        "size_bytes": len(entry.content.encode("utf-8")),
+                        "content_preview": entry.content[:2000],
+                    },
+                )
+        for error in agent_context.errors:
+            self.logger.warning(f"Could not load agent context file: {error}")
 
         if not skip_repo_map:
             from sago.utils.repo_map import generate_repo_map

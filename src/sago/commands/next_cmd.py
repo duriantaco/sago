@@ -13,6 +13,7 @@ from sago.core.project import ProjectManager
 from sago.models import Phase, Task
 from sago.models.state import TaskState, TaskStatus
 from sago.state import StateManager
+from sago.utils.agent_context import load_agent_context
 
 
 def _check_deps_met(task: Task, phase: Phase, status_by_id: dict[str, TaskStatus]) -> bool:
@@ -24,7 +25,11 @@ def _check_deps_met(task: Task, phase: Phase, status_by_id: dict[str, TaskStatus
 
 
 def _print_next_task(
-    task: Task, phase: Phase, status_by_id: dict[str, TaskStatus], state_mgr: StateManager
+    task: Task,
+    phase: Phase,
+    status_by_id: dict[str, TaskStatus],
+    state_mgr: StateManager,
+    agent_context: dict[str, Any],
 ) -> None:
     """Display full details of the next actionable task."""
     from sago.validation import check_verify_safety
@@ -49,6 +54,10 @@ def _print_next_task(
         ]
         console.print(f"\n  [dim]Depends on: {', '.join(dep_parts)}[/dim]")
 
+    if agent_context["present"]:
+        file_list = ", ".join(entry["path"] for entry in agent_context["files"])
+        console.print(f"\n  [dim]Agent context: {file_list}[/dim]")
+
     console.print(f"\n[bold]Action:[/bold]\n{task.action}")
 
     rp = state_mgr.get_resume_point()
@@ -58,7 +67,7 @@ def _print_next_task(
 
 def _load_next_context(
     project_path: Path,
-) -> tuple[list[Phase], StateManager, dict[str, TaskStatus], list[TaskState]]:
+) -> tuple[list[Phase], StateManager, dict[str, TaskStatus], list[TaskState], dict[str, Any]]:
     cfg = load_config(project_path)
     manager = ProjectManager(cfg)
     parser = MarkdownParser()
@@ -79,13 +88,14 @@ def _load_next_context(
     state_mgr = StateManager(project_path / "STATE.md")
     task_states = state_mgr.get_task_states(phases)
     status_by_id = {ts.task_id: ts.status for ts in task_states}
-    return phases, state_mgr, status_by_id, task_states
+    agent_context = load_agent_context(project_path).to_summary_dict()
+    return phases, state_mgr, status_by_id, task_states, agent_context
 
 
 def _build_next_payload(project_path: Path) -> dict[str, Any]:
     from sago.validation import check_verify_safety
 
-    phases, state_mgr, status_by_id, task_states = _load_next_context(project_path)
+    phases, state_mgr, status_by_id, task_states, agent_context = _load_next_context(project_path)
 
     for phase in phases:
         for task in phase.tasks:
@@ -103,6 +113,7 @@ def _build_next_payload(project_path: Path) -> dict[str, Any]:
                     {"task_id": dep_id, "status": status_by_id.get(dep_id, TaskStatus.PENDING)}
                     for dep_id in task.depends_on
                 ],
+                "agent_context": agent_context,
                 "verify_warnings": check_verify_safety(task.verify) if task.verify else [],
                 "resume_point": resume_point.to_dict() if resume_point is not None else None,
             }
@@ -112,6 +123,7 @@ def _build_next_payload(project_path: Path) -> dict[str, Any]:
             "success": True,
             "state": "complete",
             "message": "All tasks complete!",
+            "agent_context": agent_context,
         }
 
     failed = [ts for ts in task_states if ts.status == TaskStatus.FAILED]
@@ -120,18 +132,19 @@ def _build_next_payload(project_path: Path) -> dict[str, Any]:
         "state": "blocked",
         "message": "No actionable tasks found.",
         "failed_tasks": len(failed),
+        "agent_context": agent_context,
     }
 
 
 def _do_next(project_path: Path) -> None:
     payload = _build_next_payload(project_path)
     if payload["state"] == "task":
-        phases, state_mgr, status_by_id, _ = _load_next_context(project_path)
+        phases, state_mgr, status_by_id, _, agent_context = _load_next_context(project_path)
         task_data = payload["task"]
         for phase in phases:
             for task in phase.tasks:
                 if task.id == task_data["id"]:
-                    _print_next_task(task, phase, status_by_id, state_mgr)
+                    _print_next_task(task, phase, status_by_id, state_mgr, agent_context)
                     return
     elif payload["state"] == "complete":
         console.print("[green]All tasks complete![/green]")
