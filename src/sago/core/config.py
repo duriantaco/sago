@@ -101,10 +101,6 @@ class Config(BaseSettings):
         default=None,
         description="Override model for the planner agent (falls back to llm_model)",
     )
-    executor_model: str | None = Field(
-        default=None,
-        description="Override model for the executor agent (falls back to llm_model)",
-    )
     judge_model: str | None = Field(
         default=None,
         description="Override model for the judge/reviewer agent (falls back to llm_model)",
@@ -124,11 +120,6 @@ class Config(BaseSettings):
         return self.planner_model or self.llm_model
 
     @property
-    def effective_executor_model(self) -> str:
-        """Model to use for the executor agent."""
-        return self.executor_model or self.llm_model
-
-    @property
     def effective_judge_model(self) -> str:
         """Model to use for the judge/reviewer agent."""
         return self.judge_model or self.llm_model
@@ -141,9 +132,11 @@ class Config(BaseSettings):
             stored = keyring.get_password("sago", "judge_api_key")
             if stored:
                 return stored
-        except (ImportError, RuntimeError, KeyError, OSError) as exc:
-            # keyring may not be installed (ImportError), may lack a usable
-            # backend (RuntimeError/KeyError), or hit filesystem errors (OSError).
+        except Exception as exc:
+            # keyring can fail in many ways: ImportError (not installed),
+            # RuntimeError/KeyError (no usable backend), OSError (filesystem),
+            # dbus/SecretService errors, etc.  All are non-fatal — fall through
+            # to env-based keys.
             logger.debug("keyring lookup failed: %s", exc)
         return self.judge_api_key or self.llm_api_key
 
@@ -163,33 +156,15 @@ class Config(BaseSettings):
         default=Path(".planning"),
         description="Directory for planning artifacts",
     )
+    create_dirs: bool = Field(
+        default=True,
+        exclude=True,
+        repr=False,
+        description="Whether to create local artifact directories during config init",
+    )
     templates_dir: Path = Field(
         default=Path(__file__).parent.parent / "templates",
         description="Directory containing markdown templates",
-    )
-
-    enable_git_commits: bool = Field(
-        default=True,
-        description="Automatically create git commits for completed tasks",
-    )
-    enable_parallel_execution: bool = Field(
-        default=False,
-        description="Execute independent tasks in parallel (may cause file conflicts)",
-    )
-    max_concurrent_tasks: int = Field(
-        default=5,
-        gt=0,
-        description="Maximum number of tasks to run concurrently when parallel execution is on",
-    )
-    task_timeout: int = Field(
-        default=300,
-        gt=0,
-        description="Timeout in seconds for task execution",
-    )
-    verify_timeout: int = Field(
-        default=30,
-        gt=0,
-        description="Timeout in seconds for verify commands",
     )
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
@@ -221,6 +196,9 @@ class Config(BaseSettings):
     )
 
     def model_post_init(self, __context: object) -> None:
+        if not self.create_dirs:
+            return
+
         self.planning_dir.mkdir(parents=True, exist_ok=True)
         if self.log_file:
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
