@@ -269,7 +269,103 @@ def test_to_dict_serialization(project_dir: Path) -> None:
     assert "tasks" in result
     assert "progress" in result
     assert "phases" in result
+    assert "phase_gates" in result
     assert "recent_files" in result
+    assert "evidence" in result
+
+
+def test_phase_gates_in_poll(project_dir: Path) -> None:
+    """Watcher should surface pending review gates for completed phases."""
+    (project_dir / "STATE.md").write_text("[✓] 1.1: Create config\n[✓] 1.2: Create models\n")
+    phases = _make_phases()
+    watcher = ProjectWatcher(project_path=project_dir, plan_phases=phases)
+
+    state = watcher.poll()
+
+    assert len(state.phase_gates) == 1
+    gate = state.phase_gates[0]
+    assert gate.phase_name == "Phase 1: Foundation"
+    assert gate.status == "pending_review"
+
+
+def test_evidence_summary_in_poll(project_dir: Path) -> None:
+    """Watcher should surface receipt coverage and repeated failures."""
+    (project_dir / "STATE.md").write_text("[✓] 1.1: Create config\n")
+    runtime_dir = project_dir / ".planning" / "runtime"
+    runtime_dir.mkdir(parents=True)
+    (runtime_dir / "execution_history.json").write_text(
+        """
+{
+  "records": [
+    {
+      "task_id": "1.1",
+      "attempt": 1,
+      "receipt_id": "receipt-1.1-success",
+      "verifier_result": {
+        "task_id": "1.1",
+        "command": "pytest",
+        "exit_code": 0,
+        "stdout": "ok",
+        "stderr": "",
+        "duration_ms": 12,
+        "timed_out": false,
+        "failure_category": null,
+        "timestamp": "2026-04-17T00:00:00Z"
+      },
+      "files_changed": ["src/config.py"],
+      "timestamp": "2026-04-17T00:00:00Z"
+    },
+    {
+      "task_id": "1.2",
+      "attempt": 1,
+      "receipt_id": "receipt-1.2-fail-a",
+      "verifier_result": {
+        "task_id": "1.2",
+        "command": "pytest",
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "ModuleNotFoundError: No module named 'models'",
+        "duration_ms": 20,
+        "timed_out": false,
+        "failure_category": "import_error",
+        "timestamp": "2026-04-17T00:01:00Z"
+      },
+      "files_changed": ["src/models.py"],
+      "timestamp": "2026-04-17T00:01:00Z"
+    },
+    {
+      "task_id": "1.2",
+      "attempt": 2,
+      "receipt_id": "receipt-1.2-fail-b",
+      "verifier_result": {
+        "task_id": "1.2",
+        "command": "pytest",
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "ModuleNotFoundError: No module named 'models'",
+        "duration_ms": 22,
+        "timed_out": false,
+        "failure_category": "import_error",
+        "timestamp": "2026-04-17T00:02:00Z"
+      },
+      "files_changed": ["src/models.py"],
+      "timestamp": "2026-04-17T00:02:00Z"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    phases = _make_phases()
+    watcher = ProjectWatcher(project_path=project_dir, plan_phases=phases)
+
+    state = watcher.poll()
+
+    assert state.evidence.receipts == 3
+    assert state.evidence.verified_done == 1
+    assert state.evidence.missing_done == 0
+    assert state.evidence.repeated_failures == 1
 
 
 def test_plan_file_tracking(project_dir: Path) -> None:

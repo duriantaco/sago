@@ -1,8 +1,4 @@
-"""State manager — the single authority for STATE.md reads and writes.
-
-All state mutations AND reads go through this module, guaranteeing format
-consistency and a single source of truth.
-"""
+"""State manager backed by canonical JSON with STATE.md rendering."""
 
 from __future__ import annotations
 
@@ -12,7 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sago.models.plan import Phase
-from sago.models.state import ProjectState, ResumePoint, TaskState, TaskStatus
+from sago.models.state import PhaseGateStatus, PhaseReview, ProjectState, ResumePoint, TaskState, TaskStatus
+from sago.persistence import PersistedProjectState, ProjectStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -34,266 +31,106 @@ class ValidationResult:
 
 
 class StateManager:
-    """Owns all reads and writes to STATE.md."""
+    """Owns all project-state reads and writes for STATE.md and project_state.json."""
 
     def __init__(self, state_path: Path) -> None:
         self.path = state_path
+        self.store = ProjectStateStore(state_path)
 
-    # ------------------------------------------------------------------
-    # Read — public API
-    # ------------------------------------------------------------------
+    @property
+    def structured_state_path(self) -> Path:
+        return self.store.persisted_path
+
+    def exists(self) -> bool:
+        return self.store.exists()
+
+    def state_mtime(self) -> float:
+        return self.store.state_mtime()
+
+    def _load_state(self) -> PersistedProjectState:
+        return self.store.load()
+
+    def _save_state(self, state: PersistedProjectState) -> None:
+        self.store.save(state)
 
     def _read(self) -> str:
         if self.path.exists():
             return self.path.read_text(encoding="utf-8")
-        return ""
+        state = self._load_state()
+        if self.path.exists():
+            return self.path.read_text(encoding="utf-8")
+        return state.render_markdown(self.path.parent.name)
 
     def task_status(self, task_id: str) -> TaskStatus:
-        """Return the current status of a task from STATE.md."""
-        content = self._read()
-        if re.search(rf"\[✓\]\s+{re.escape(task_id)}:", content):
-            return TaskStatus.DONE
-        if re.search(rf"\[✗\]\s+{re.escape(task_id)}:", content):
-            return TaskStatus.FAILED
-        if re.search(rf"\[⊘\]\s+{re.escape(task_id)}:", content):
-            return TaskStatus.SKIPPED
-        return TaskStatus.PENDING
-
-    @staticmethod
-    def _parse_status_ids(content: str) -> dict[str, TaskStatus]:
-        """Parse STATE.md content and return a mapping of task ID to status."""
-        status_map: dict[str, TaskStatus] = {}
-        markers = {
-            "✓": TaskStatus.DONE,
-            "✗": TaskStatus.FAILED,
-            "⊘": TaskStatus.SKIPPED,
-        }
-        for line in content.split("\n"):
-            line = line.strip()
-            m = re.match(r"\[([✓✗⊘])\]\s+(\d+\.\d+):", line)
-            if m:
-                status_map[m.group(2)] = markers[m.group(1)]
-        return status_map
+        """Return the current status of a task."""
+        state = self._load_state()
+        record = state.task_record_map().get(task_id)
+        return record.status if record is not None else TaskStatus.PENDING
 
     def get_task_states(self, plan_phases: list[Phase]) -> list[TaskState]:
-        """Parse STATE.md and return status for every task in the plan.
-
-        Tasks not mentioned in STATE.md default to PENDING.
-        """
-        status_map = self._parse_status_ids(self._read())
-        return [
-            TaskState(
-                task_id=task.id,
-                status=status_map.get(task.id, TaskStatus.PENDING),
-            )
-            for phase in plan_phases
-            for task in phase.tasks
-        ]
+        """Return task states aligned to the current plan."""
+        state = self._load_state()
+        return state.to_public_state(plan_phases).task_states
 
     def completed_task_ids(self) -> list[str]:
-        """Return list of completed (done) task IDs from STATE.md."""
-        content = self._read()
-        return re.findall(r"\[✓\]\s+(\d+\.\d+):", content)
+        """Return list of completed task IDs."""
+        return self._load_state().completed_task_ids()
 
     def get_project_state(self, plan_phases: list[Phase]) -> ProjectState:
-        """Parse STATE.md into a fully-populated ProjectState model.
-
-        This is the canonical read method — replaces parse_state(),
-        parse_state_file(), parse_state_tasks(), and _get_completed_task_ids().
-        """
-        content = self._read()
-
-        # Parse Current Context
-        active_phase = ""
-        current_task = ""
-        m = re.search(r"\*\s*\*\*Active Phase:\*\*\s*(.*)", content)
-        if m:
-            active_phase = m.group(1).strip()
-        m = re.search(r"\*\s*\*\*Current Task:\*\*\s*(.*)", content)
-        if m:
-            current_task = m.group(1).strip()
-
-        # Parse decisions
-        decisions: list[str] = []
-        dec_match = re.search(r"## Key Decisions\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
-        if dec_match:
-            for line in dec_match.group(1).split("\n"):
-                line = line.strip()
-                if line.startswith("*"):
-                    decisions.append(line[1:].strip())
-
-        # Parse blockers
-        blockers: list[str] = []
-        blk_match = re.search(
-            r"### Known Blockers\s*\n(.*?)(?=\n## |\n### |\Z)", content, re.DOTALL
-        )
-        if blk_match:
-            for line in blk_match.group(1).split("\n"):
-                line = line.strip()
-                if line.startswith("*"):
-                    blockers.append(line[1:].strip())
-
-        return ProjectState(
-            active_phase=active_phase,
-            current_task=current_task,
-            task_states=self.get_task_states(plan_phases),
-            decisions=decisions,
-            blockers=blockers,
-            resume_point=self.get_resume_point(),
-        )
+        """Return the public project-state view for CLI/status surfaces."""
+        return self._load_state().to_public_state(plan_phases)
 
     def get_resume_point(self) -> ResumePoint | None:
         """Read and return the current resume point, or None."""
-        content = self._read()
-        match = re.search(r"## Resume Point\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
-        if not match:
-            return None
+        return self._load_state().resume_point
 
-        section = match.group(1)
-        fields: dict[str, str] = {}
-        for label in (
-            "Last Completed",
-            "Next Task",
-            "Next Action",
-            "Failure Reason",
-            "Checkpoint",
-        ):
-            m = re.search(rf"\*\s*\*\*{re.escape(label)}:\*\*\s*(.*)", section)
-            fields[label] = m.group(1).strip() if m else "None"
+    def has_phase_summary(self, phase_name: str) -> bool:
+        state = self._load_state()
+        return phase_name in state.merged_phase_reviews()
 
-        if all(v == "None" for v in fields.values()):
-            return None
+    def get_phase_review(self, phase_name: str) -> PhaseReview | None:
+        return self._load_state().merged_phase_reviews().get(phase_name)
 
-        return ResumePoint(
-            last_completed=fields["Last Completed"],
-            next_task=fields["Next Task"],
-            next_action=fields["Next Action"],
-            failure_reason=fields["Failure Reason"],
-            checkpoint=fields["Checkpoint"],
-        )
+    def phase_gate_status(self, phase_name: str) -> PhaseGateStatus:
+        review = self.get_phase_review(phase_name)
+        if review is None:
+            return PhaseGateStatus.PENDING_REVIEW
+        return review.gate_status
 
     def validate(self) -> ValidationResult:
-        """Validate STATE.md format. Returns warnings for any issues found."""
+        """Validate rendered STATE.md format. Returns warnings for any issues found."""
         content = self._read()
         result = ValidationResult()
 
         if not content:
-            return result  # Empty/missing file is valid (not started)
+            return result
 
-        # Check required sections
         for section in ("## Current Context", "## Resume Point", "## Completed Tasks"):
             if section not in content:
                 result.warnings.append(f"Missing section: {section}")
                 result.valid = False
 
-        # Check for duplicate task lines
         task_ids: list[str] = []
-        for m in re.finditer(r"^\[.\]\s+(\d+\.\d+):", content, re.MULTILINE):
-            tid = m.group(1)
-            if tid in task_ids:
-                result.warnings.append(f"Duplicate task entry: {tid}")
+        for match in re.finditer(r"^\[.\]\s+(\d+\.\d+):", content, re.MULTILINE):
+            task_id = match.group(1)
+            if task_id in task_ids:
+                result.warnings.append(f"Duplicate task entry: {task_id}")
                 result.valid = False
-            task_ids.append(tid)
+            task_ids.append(task_id)
 
         return result
-
-    # ------------------------------------------------------------------
-    # Write — helpers
-    # ------------------------------------------------------------------
-
-    def _write(self, content: str) -> None:
-        self.path.write_text(content, encoding="utf-8")
-
-    def _ensure_completed_section(self, content: str) -> str:
-        """Make sure the ## Completed Tasks section exists."""
-        if "## Completed Tasks" not in content:
-            content = content.rstrip("\n") + "\n\n## Completed Tasks\n"
-        return content
-
-    def _remove_existing_task_line(self, content: str, task_id: str) -> str:
-        """Remove any existing checkpoint line for this task (allows re-checkpointing)."""
-        pattern = rf"^\[.\]\s+{re.escape(task_id)}:.*\n?"
-        return re.sub(pattern, "", content, flags=re.MULTILINE)
-
-    def _update_resume_point(
-        self,
-        content: str,
-        last_completed: str,
-        next_task: str,
-        next_action: str,
-        failure_reason: str,
-        checkpoint: str,
-    ) -> str:
-        """Replace the Resume Point section in content."""
-        new_section = (
-            "## Resume Point\n"
-            "\n"
-            f"* **Last Completed:** {last_completed}\n"
-            f"* **Next Task:** {next_task}\n"
-            f"* **Next Action:** {next_action}\n"
-            f"* **Failure Reason:** {failure_reason}\n"
-            f"* **Checkpoint:** {checkpoint}\n"
-        )
-
-        # Replace existing Resume Point section
-        pattern = r"## Resume Point\s*\n(?:.*\n)*?(?=\n## |\Z)"
-        if re.search(pattern, content):
-            content = re.sub(pattern, new_section, content)
-        else:
-            # Insert before ## Completed Tasks if it exists
-            if "## Completed Tasks" in content:
-                content = content.replace(
-                    "## Completed Tasks", new_section + "\n## Completed Tasks"
-                )
-            else:
-                content = content.rstrip("\n") + "\n\n" + new_section
-        return content
-
-    def _update_current_context(self, content: str, active_phase: str, current_task: str) -> str:
-        """Update the Current Context section."""
-        content = re.sub(
-            r"(\*\s*\*\*Active Phase:\*\*)\s*.*",
-            f"\\1 {active_phase}",
-            content,
-        )
-        content = re.sub(
-            r"(\*\s*\*\*Current Task:\*\*)\s*.*",
-            f"\\1 {current_task}",
-            content,
-        )
-        return content
-
-    # ------------------------------------------------------------------
-    # Write — public API
-    # ------------------------------------------------------------------
-
-    def _insert_task_line(self, content: str, line: str) -> str:
-        """Insert a task line into the Completed Tasks section."""
-        completed_idx = content.index("## Completed Tasks")
-        rest = content[completed_idx + len("## Completed Tasks") :]
-        next_section = re.search(r"\n## ", rest)
-        if next_section:
-            insert_pos = completed_idx + len("## Completed Tasks") + next_section.start()
-            return content[:insert_pos] + "\n" + line + content[insert_pos:]
-        return content.rstrip("\n") + "\n" + line + "\n"
-
-    def _append_decisions(self, content: str, decisions: list[str]) -> str:
-        """Append decisions to the Key Decisions section."""
-        if "## Key Decisions" not in content:
-            content = content.rstrip("\n") + "\n\n## Key Decisions\n"
-        for decision in decisions:
-            if decision not in content:
-                content = content.rstrip("\n") + f"\n* {decision}\n"
-        return content
 
     def _check_phase_complete(
         self, phase_task_ids: list[str] | None, phase_name: str, status: TaskStatus
     ) -> CheckpointResult:
         """Check if all tasks in a phase are done and mark complete if so."""
         result = CheckpointResult()
-        if phase_task_ids and phase_name and status == TaskStatus.DONE:
-            all_done = all(self.task_status(tid) == TaskStatus.DONE for tid in phase_task_ids)
-            if all_done:
+        if phase_task_ids and phase_name and status in {TaskStatus.DONE, TaskStatus.SKIPPED}:
+            terminal_statuses = {TaskStatus.DONE, TaskStatus.SKIPPED}
+            all_terminal = all(
+                self.task_status(task_id) in terminal_statuses for task_id in phase_task_ids
+            )
+            if all_terminal:
                 self.mark_phase_complete(phase_name)
                 result.phase_completed = True
                 result.phase_name = phase_name
@@ -312,53 +149,55 @@ class StateManager:
         phase_task_ids: list[str] | None = None,
     ) -> CheckpointResult:
         """Record a task checkpoint — the primary state mutation."""
-        content = self._read()
-        content = self._ensure_completed_section(content)
-        content = self._remove_existing_task_line(content, task_id)
+        state = self._load_state()
+        state.upsert_task_record(
+            task_id=task_id,
+            task_name=task_name,
+            status=status,
+            note=notes,
+        )
 
-        # Build and insert the checkpoint line
-        icon = {"done": "✓", "failed": "✗", "skipped": "⊘"}[status.value]
-        line = f"[{icon}] {task_id}: {task_name}"
-        if notes:
-            line += f" — {notes}"
-        content = self._insert_task_line(content, line)
-
-        # Update Current Context
         if phase_name:
-            content = self._update_current_context(content, phase_name, next_task or "None")
+            state.active_phase = phase_name
+            state.current_task = next_task or "None"
 
-        # Update Resume Point
         failure_reason = notes if status == TaskStatus.FAILED else "None"
-        checkpoint_tag = f"sago-checkpoint-{task_id}" if status == TaskStatus.DONE else ""
-        content = self._update_resume_point(
-            content,
+        checkpoint_tag = f"sago-checkpoint-{task_id}" if status == TaskStatus.DONE else "None"
+        state.resume_point = ResumePoint(
             last_completed=f"{task_id}: {task_name}",
             next_task=next_task or "None",
             next_action=next_action or "None",
             failure_reason=failure_reason,
-            checkpoint=checkpoint_tag or "None",
+            checkpoint=checkpoint_tag,
         )
 
         if decisions:
-            content = self._append_decisions(content, decisions)
+            for decision in decisions:
+                if decision not in state.decisions:
+                    state.decisions.append(decision)
 
-        self._write(content)
+        self._save_state(state)
         return self._check_phase_complete(phase_task_ids, phase_name, status)
 
     def mark_phase_complete(self, phase_name: str) -> None:
         """Append a phase completion marker."""
-        content = self._read()
-        header = f"## Phase Complete: {phase_name}"
-        if header in content:
+        state = self._load_state()
+        if phase_name in state.phase_completions:
             return
-        content = content.rstrip("\n") + f"\n\n{header}\n"
-        self._write(content)
+        state.phase_completions.append(phase_name)
+        self._save_state(state)
 
     def append_phase_summary(self, phase_name: str, review_output: str) -> None:
-        """Append a phase review summary (skips if already present)."""
-        content = self._read()
-        header = f"## Phase Summary: {phase_name}"
-        if header in content:
+        """Store a legacy phase summary as an approved review (skips if already present)."""
+        state = self._load_state()
+        if phase_name in state.merged_phase_reviews():
             return
-        block = f"\n{header}\n\n{review_output}\n"
-        self._write(content + block)
+        state.phase_summaries[phase_name] = review_output
+        self._save_state(state)
+
+    def record_phase_review(self, review: PhaseReview) -> None:
+        """Persist a structured phase review."""
+        state = self._load_state()
+        state.phase_reviews[review.phase_name] = review
+        state.phase_summaries.pop(review.phase_name, None)
+        self._save_state(state)

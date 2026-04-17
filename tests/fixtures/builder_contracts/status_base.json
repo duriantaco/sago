@@ -1,0 +1,56 @@
+{
+  "keys": [
+    "success",
+    "project",
+    "agent_context",
+    "has_plan",
+    "plan_error",
+    "state",
+    "task_summary",
+    "evidence_summary",
+    "memory_summary",
+    "phases",
+    "phase_gates",
+    "recommendations",
+    "blockers",
+    "next_steps"
+  ],
+  "project_keys": [
+    "path",
+    "name",
+    "exists",
+    "has_planning_dir",
+    "template_files"
+  ],
+  "state_keys": [
+    "active_phase",
+    "current_task",
+    "task_states",
+    "decisions",
+    "blockers",
+    "resume_point",
+    "phase_reviews"
+  ],
+  "task_summary": {
+    "completed": 1,
+    "failed": 0,
+    "pending": 1,
+    "skipped": 0,
+    "total": 2
+  },
+  "evidence_summary": {
+    "receipts": 0,
+    "verified_done": 0,
+    "missing_done": 1,
+    "repeated_failures": 0
+  },
+  "memory_summary": {
+    "decision_count": 0,
+    "blocker_count": 0,
+    "reviewed_phase_count": 0,
+    "decisions": [],
+    "blockers": [],
+    "reviewed_phases": []
+  },
+  "phase_gates": []
+}

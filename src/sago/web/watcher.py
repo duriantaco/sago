@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Literal
 
 from sago.models.plan import Phase
+from sago.models.state import ProjectState as CliProjectState
+from sago.persistence import ExecutionHistoryStore
 from sago.state import StateManager
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,38 @@ class ProgressSummary:
 
 
 @dataclass
+class EvidenceSummary:
+    receipts: int
+    verified_done: int
+    missing_done: int
+    repeated_failures: int
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "receipts": self.receipts,
+            "verified_done": self.verified_done,
+            "missing_done": self.missing_done,
+            "repeated_failures": self.repeated_failures,
+        }
+
+
+@dataclass
+class PhaseGate:
+    phase_name: str
+    status: str
+    summary: str
+    blocking_findings: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "phase_name": self.phase_name,
+            "status": self.status,
+            "summary": self.summary,
+            "blocking_findings": self.blocking_findings,
+        }
+
+
+@dataclass
 class MdFileContent:
     filename: str
     content: str
@@ -97,6 +131,8 @@ class ProjectState:
     tasks: list[TaskStatus]
     progress: ProgressSummary
     phases: list[PhaseProgress]
+    phase_gates: list[PhaseGate]
+    evidence: EvidenceSummary
     recent_files: list[FileChange]
     md_files: list[MdFileContent]
     last_updated: str
@@ -106,6 +142,8 @@ class ProjectState:
             "tasks": [t.to_dict() for t in self.tasks],
             "progress": self.progress.to_dict(),
             "phases": [p.to_dict() for p in self.phases],
+            "phase_gates": [gate.to_dict() for gate in self.phase_gates],
+            "evidence": self.evidence.to_dict(),
             "recent_files": [f.to_dict() for f in self.recent_files],
             "md_files": [m.to_dict() for m in self.md_files],
             "last_updated": self.last_updated,
@@ -241,6 +279,8 @@ class ProjectWatcher:
     def poll(self) -> ProjectState:
         """Read STATE.md + scan files. Called by HTTP handler per request."""
         tasks = self._parse_state()
+        state_mgr = StateManager(self.project_path / "STATE.md")
+        public_state = state_mgr.get_project_state(self.plan_phases)
         recent_files = self._scan_files()
         md_files = self._read_md_files()
 
@@ -265,15 +305,63 @@ class ProjectWatcher:
                     phase_map[t.phase_name].failed += 1
 
         pct = round(done_total / total * 100) if total > 0 else 0
+        evidence = self._build_evidence_summary(tasks)
+        phase_gates = self._build_phase_gates(public_state)
 
         return ProjectState(
             tasks=tasks,
             progress=ProgressSummary(done=done_total, failed=failed_total, total=total, pct=pct),
             phases=list(phase_map.values()),
+            phase_gates=phase_gates,
+            evidence=evidence,
             recent_files=recent_files,
             md_files=md_files,
             last_updated=datetime.now(UTC).isoformat(),
         )
+
+    def _build_evidence_summary(self, tasks: list[TaskStatus]) -> EvidenceSummary:
+        history = ExecutionHistoryStore(self.project_path).load()
+        successful_receipts = history.tasks_with_successful_receipts()
+        done_ids = {task.id for task in tasks if task.status == "done"}
+        return EvidenceSummary(
+            receipts=len(history.records),
+            verified_done=len(done_ids & successful_receipts),
+            missing_done=len(done_ids - successful_receipts),
+            repeated_failures=len(history.repeated_failures()),
+        )
+
+    def _build_phase_gates(self, state: CliProjectState) -> list[PhaseGate]:
+        state_by_id = {task.task_id: task.status.value for task in state.task_states}
+        phase_gates: list[PhaseGate] = []
+        for phase in self.plan_phases:
+            done = sum(1 for task in phase.tasks if state_by_id.get(task.id) == "done")
+            failed = sum(1 for task in phase.tasks if state_by_id.get(task.id) == "failed")
+            skipped = sum(1 for task in phase.tasks if state_by_id.get(task.id) == "skipped")
+            pending = len(phase.tasks) - done - failed - skipped
+            if pending != 0 or failed != 0:
+                continue
+
+            review = state.phase_reviews.get(phase.name)
+            if review is None:
+                phase_gates.append(
+                    PhaseGate(
+                        phase_name=phase.name,
+                        status="pending_review",
+                        summary="Phase review required before continuing.",
+                        blocking_findings=0,
+                    )
+                )
+                continue
+
+            phase_gates.append(
+                PhaseGate(
+                    phase_name=phase.name,
+                    status=review.gate_status.value,
+                    summary=review.summary,
+                    blocking_findings=len(review.blocking_findings()),
+                )
+            )
+        return phase_gates
 
     def _read_md_files(self) -> list[MdFileContent]:
         """Read .md project files, using mtime cache to avoid unnecessary re-reads."""
@@ -306,26 +394,12 @@ class ProjectWatcher:
         return MdFileContent(filename=filename, content=content, mtime=mtime)
 
     def _parse_state(self) -> list[TaskStatus]:
-        """Parse STATE.md for task completion markers [✓] and [✗]."""
-        state_file = self.project_path / "STATE.md"
-        if not state_file.exists():
-            # All tasks pending
-            return [
-                TaskStatus(id=t.id, name=t.name, status="pending", phase_name=p.name)
-                for p in self.plan_phases
-                for t in p.tasks
-            ]
-
-        # Check if STATE.md has been modified
-        try:
-            mtime = os.stat(state_file).st_mtime
-        except OSError as exc:
-            logger.debug("Cannot stat STATE.md, assuming stale: %s", exc)
-            mtime = 0.0
+        """Parse canonical project state, rendering STATE.md as a human view."""
+        state_mgr = StateManager(self.project_path / "STATE.md")
+        mtime = state_mgr.state_mtime()
 
         if mtime != self._cache.state_mtime or not self._cache.cached_tasks:
             self._cache.state_mtime = mtime
-            state_mgr = StateManager(state_file)
             task_states = state_mgr.get_task_states(self.plan_phases)
 
             # Build task name/phase lookup from plan

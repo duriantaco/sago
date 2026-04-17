@@ -1,0 +1,43 @@
+{
+  "keys": [
+    "success",
+    "task_id",
+    "task_name",
+    "status",
+    "notes",
+    "next_task",
+    "next_action",
+    "decisions",
+    "phase_name",
+    "phase_completed",
+    "phase_complete_name",
+    "git_tag_created",
+    "receipt",
+    "evidence_summary"
+  ],
+  "payload": {
+    "success": true,
+    "task_id": "1.1",
+    "task_name": "Create config",
+    "status": "done",
+    "notes": "Config works",
+    "next_task": "1.2: Create main",
+    "next_action": "Implement main module",
+    "decisions": ["Chose YAML over JSON", "Using pydantic"],
+    "phase_name": "Phase 1: Foundation",
+    "phase_completed": false,
+    "phase_complete_name": "",
+    "git_tag_created": false,
+    "receipt": {
+      "attached": false,
+      "receipt_id": null,
+      "path": null
+    },
+    "evidence_summary": {
+      "receipts": 0,
+      "verified_done": 0,
+      "missing_done": 1,
+      "repeated_failures": 0
+    }
+  }
+}

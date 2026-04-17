@@ -1,0 +1,21 @@
+{
+  "keys": [
+    "success",
+    "state",
+    "message",
+    "reason",
+    "phase",
+    "failed_tasks",
+    "blocking_findings",
+    "agent_context"
+  ],
+  "exact": {
+    "success": true,
+    "state": "blocked",
+    "message": "Phase review required before continuing.",
+    "reason": "phase_review_required",
+    "phase": "Phase 1: Foundation",
+    "failed_tasks": 0,
+    "blocking_findings": []
+  }
+}

@@ -60,6 +60,10 @@ header{position:sticky;top:0;z-index:50;background:var(--bg2);border-bottom:1px 
 .phase-header:hover{background:rgba(255,255,255,.02)}
 .phase-icon{font-size:14px;width:22px;text-align:center;flex-shrink:0}
 .phase-name{font-size:13px;font-weight:600;flex:1}
+.phase-gate{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0}
+.phase-gate.pending_review{background:rgba(229,168,59,.14);color:var(--yellow)}
+.phase-gate.approved{background:rgba(77,202,106,.14);color:var(--green)}
+.phase-gate.blocked{background:rgba(239,83,80,.14);color:var(--red)}
 .phase-count{font-size:11px;color:var(--fg3);font-variant-numeric:tabular-nums}
 .phase-tasks{padding:0 16px 12px}
 .task-row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px}
@@ -89,6 +93,9 @@ header{position:sticky;top:0;z-index:50;background:var(--bg2);border-bottom:1px 
 .dep-list{display:flex;flex-direction:column;gap:4px}
 .dep-item{font-size:12px;color:var(--fg2);font-family:'SF Mono','Fira Code',monospace;padding:3px 0}
 .dep-item::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--purple);margin-right:8px;vertical-align:middle}
+.evidence-item{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--fg2);padding:4px 0}
+.evidence-key{color:var(--fg3);text-transform:uppercase;letter-spacing:.4px;font-size:10px;font-weight:600}
+.evidence-val{font-family:'SF Mono','Fira Code',monospace}
 
 /* Right panel: md viewer */
 .mc-right{display:flex;flex-direction:column;min-width:0}
@@ -330,6 +337,13 @@ header{position:sticky;top:0;z-index:50;background:var(--bg2);border-bottom:1px 
         <div class="card-title">Dependencies</div>
         <div class="dep-list" id="mcDepList"></div>
       </div>
+
+      <div class="dep-card" id="mcEvidenceCard">
+        <div class="card-title">Evidence</div>
+        <div class="dep-list" id="mcEvidenceList">
+          <div class="file-empty">No receipts yet</div>
+        </div>
+      </div>
     </div>
 
     <div class="mc-right">
@@ -562,15 +576,23 @@ function switchMainTab(tab){
     if(loading)loading.remove();
 
     var phaseMap={};
+    var gateMap={};
     state.tasks.forEach(function(t){if(!phaseMap[t.phase_name])phaseMap[t.phase_name]=[];phaseMap[t.phase_name].push(t)});
+    (state.phase_gates||[]).forEach(function(g){gateMap[g.phase_name]=g});
     var html='';
     state.phases.forEach(function(p){
       var tasks=phaseMap[p.name]||[];
+      var gate=gateMap[p.name];
       var icon=phaseIcon(p.done,p.failed,p.total);
       html+='<div class="phase-card">';
       html+='<div class="phase-header" onclick="this.parentElement.classList.toggle(\'collapsed\')">';
       html+='<div class="phase-icon">'+icon+'</div>';
       html+='<div class="phase-name">'+esc(p.name)+'</div>';
+      if(gate){
+        var gateLabel=gate.status.replace(/_/g,' ');
+        if(gate.status==='blocked'&&gate.blocking_findings>0)gateLabel+=' · '+gate.blocking_findings;
+        html+='<div class="phase-gate '+esc(gate.status)+'" title="'+esc(gate.summary||gateLabel)+'">'+esc(gateLabel)+'</div>';
+      }
       html+='<div class="phase-count">'+p.done+'/'+p.total+'</div>';
       html+='</div>';
       html+='<div class="phase-tasks">';
@@ -627,11 +649,25 @@ function switchMainTab(tab){
       document.getElementById('mcDepList').innerHTML=html;
     }
   }
+  function renderEvidence(evidence){
+    var list=document.getElementById('mcEvidenceList');
+    if(!evidence||(!evidence.receipts&&!evidence.verified_done&&!evidence.missing_done&&!evidence.repeated_failures)){
+      list.innerHTML='<div class="file-empty">No receipts yet</div>';
+      return;
+    }
+    var html='';
+    html+='<div class="evidence-item"><span class="evidence-key">Receipts</span><span class="evidence-val">'+esc(String(evidence.receipts||0))+'</span></div>';
+    html+='<div class="evidence-item"><span class="evidence-key">Verified Done</span><span class="evidence-val">'+esc(String(evidence.verified_done||0))+'</span></div>';
+    html+='<div class="evidence-item"><span class="evidence-key">Missing Evidence</span><span class="evidence-val">'+esc(String(evidence.missing_done||0))+'</span></div>';
+    html+='<div class="evidence-item"><span class="evidence-key">Repeated Failures</span><span class="evidence-val">'+esc(String(evidence.repeated_failures||0))+'</span></div>';
+    list.innerHTML=html;
+  }
   function updateState(state){
     renderPhases(state);
     renderFiles(state.recent_files);
     renderProgress(state.progress);
     renderPhaseBars(state.phases);
+    renderEvidence(state.evidence);
     renderMdFiles(state.md_files);
     prevState=state;
   }

@@ -1,0 +1,22 @@
+{
+  "phase_gates": [
+    {
+      "phase_name": "Phase 1: Foundation",
+      "status": "approved",
+      "reviewed_at": "<dynamic>",
+      "blocking_findings": [],
+      "summary": "Approved after review."
+    }
+  ],
+  "phase_reviews": {
+    "Phase 1: Foundation": {
+      "phase_name": "Phase 1: Foundation",
+      "summary": "Approved after review.",
+      "gate_status": "approved",
+      "reviewed_at": "<dynamic>",
+      "reviewer": "judge",
+      "finding_count": 0,
+      "findings": []
+    }
+  }
+}

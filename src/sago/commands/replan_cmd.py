@@ -21,14 +21,13 @@ from sago.commands import (
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
 from sago.models import Phase
-from sago.models.state import TaskState, TaskStatus
+from sago.models.state import PhaseReview, TaskState, TaskStatus
 from sago.state import StateManager
 
 
-def _write_phase_summary_to_state(state_file: Path, phase_name: str, review_output: str) -> None:
-    """Append a phase summary to STATE.md (skips if already present)."""
-    state_mgr = StateManager(state_file)
-    state_mgr.append_phase_summary(phase_name, review_output)
+def _write_phase_review_to_state(state_file: Path, review: PhaseReview) -> None:
+    """Persist a structured phase review."""
+    StateManager(state_file).record_phase_review(review)
 
 
 def _show_plan_diff(old_phases: list[Phase], new_phases: list[Phase]) -> None:
@@ -111,14 +110,15 @@ def _review_phases(
     """Review completed phases that haven't been reviewed yet."""
     from rich.panel import Panel
 
-    existing_state = state_file.read_text(encoding="utf-8") if state_file.exists() else ""
+    state_mgr = StateManager(state_file)
     review_outputs: list[str] = []
 
     for i, ps in enumerate(phase_statuses):
         if ps["status"] != "complete":
             continue
-        summary_header = f"## Phase Summary: {ps['name']}"
-        if summary_header in existing_state:
+        existing_review = state_mgr.get_phase_review(ps["name"])
+        if existing_review is not None:
+            review_outputs.append(existing_review.to_markdown())
             continue
 
         phase = old_phases[i]
@@ -132,13 +132,19 @@ def _review_phases(
             progress.add_task(description=f"Reviewing {ps['name']}...", total=None)
             review_result = asyncio.run(orchestrator.run_review(project_path, phase, review_prompt))
 
-        if review_result.success:
-            review_text = review_result.output
-            review_outputs.append(review_text)
-            console.print(Panel(review_text, title=f"Review: {ps['name']}", border_style="cyan"))
-            _write_phase_summary_to_state(state_file, ps["name"], review_text)
-        else:
-            console.print(f"[yellow]Review failed for {ps['name']}: {review_result.error}[/yellow]")
+        if not review_result.success:
+            raise ValueError(f"Review failed for {ps['name']}: {review_result.error}")
+
+        metadata = getattr(review_result, "metadata", {}) or {}
+        phase_review = (
+            PhaseReview.model_validate(metadata["phase_review"])
+            if isinstance(metadata.get("phase_review"), dict)
+            else PhaseReview.from_legacy_summary(ps["name"], review_result.output)
+        )
+        review_text = phase_review.to_markdown()
+        review_outputs.append(review_text)
+        console.print(Panel(review_text, title=f"Review: {ps['name']}", border_style="cyan"))
+        _write_phase_review_to_state(state_file, phase_review)
 
     return review_outputs
 
@@ -250,7 +256,11 @@ def _do_replan(
         orchestrator,
     )
 
-    show_recommendations(old_phases, task_states)
+    show_recommendations(
+        old_phases,
+        task_states,
+        phase_reviews=state_mgr.get_project_state(old_phases).phase_reviews,
+    )
 
     if feedback is None:
         feedback = typer.prompt(

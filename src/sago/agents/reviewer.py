@@ -1,9 +1,12 @@
 import logging
+import json
+import re
 from pathlib import Path
 from typing import Any
 
 from sago.agents.base import AgentResult, AgentStatus, BaseAgent
 from sago.models import Phase
+from sago.models.state import PhaseReview, ReviewFinding, ReviewSeverity
 from sago.utils.agent_context import load_agent_context
 from sago.utils.paths import safe_resolve
 from sago.utils.tracer import tracer
@@ -23,6 +26,19 @@ Rules:
 - Be specific and actionable, with file and line references when possible
 - Separate critical issues, warnings, and suggestions clearly
 - Honor repo-local agent context files (IMPORTANT.md, AGENTS.md, SKILLS.md, CLAUDE.md, .cursorrules) when present
+- Return valid JSON only with this shape:
+  {
+    "summary": "short human summary",
+    "findings": [
+      {
+        "severity": "critical" | "warning" | "suggestion",
+        "message": "what is wrong or what to improve",
+        "file": "relative/path.py",
+        "line": 12
+      }
+    ]
+  }
+- Use an empty findings array when there are no issues.
 """
 
     async def execute(self, context: dict[str, Any]) -> AgentResult:
@@ -52,7 +68,8 @@ Rules:
         messages = self._build_review_messages(review_prompt, review_context)
 
         response = await self._call_llm(messages)
-        review_output: str = response["content"]
+        review = self._parse_review_response(phase.name, response["content"])
+        review_output = review.to_markdown()
 
         tracer.emit(
             "phase_review",
@@ -61,6 +78,8 @@ Rules:
                 "phase_name": phase.name,
                 "review_length": len(review_output),
                 "review_preview": review_output[:2000],
+                "gate_status": review.gate_status.value,
+                "finding_count": len(review.findings),
             },
         )
 
@@ -70,6 +89,7 @@ Rules:
             metadata={
                 "phase_name": phase.name,
                 "review_length": len(review_output),
+                "phase_review": review.model_dump(mode="json"),
             },
         )
 
@@ -141,7 +161,79 @@ Rules:
 {review_context}
 
 Provide your review now. Be specific with file names and line references.
-Format issues as:
-- [CRITICAL] / [WARNING] / [SUGGESTION] description (file:line if applicable)""",
+Return JSON only.""",
             },
         ]
+
+    def _parse_review_response(self, phase_name: str, content: str) -> PhaseReview:
+        payload = self._extract_json_payload(content)
+        if payload is not None:
+            findings = [
+                ReviewFinding(
+                    severity=ReviewSeverity(str(item.get("severity", "warning")).lower()),
+                    message=str(item.get("message", "")).strip(),
+                    file=(str(item["file"]).strip() if item.get("file") else None),
+                    line=int(item["line"]) if item.get("line") is not None else None,
+                )
+                for item in payload.get("findings", [])
+                if str(item.get("message", "")).strip()
+            ]
+            return PhaseReview(
+                phase_name=phase_name,
+                summary=str(payload.get("summary", "")).strip(),
+                findings=findings,
+                reviewer="judge",
+                raw_output=content.strip(),
+            )
+
+        findings = self._parse_legacy_findings(content)
+        return PhaseReview(
+            phase_name=phase_name,
+            summary=content.strip(),
+            findings=findings,
+            reviewer="judge",
+            raw_output=content.strip(),
+        )
+
+    def _extract_json_payload(self, content: str) -> dict[str, Any] | None:
+        candidates = [content.strip()]
+        fenced = re.search(r"```json\s*(\{.*?\})\s*```", content, re.DOTALL)
+        if fenced:
+            candidates.insert(0, fenced.group(1).strip())
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                payload = json.loads(candidate)
+            except json.JSONDecodeError:
+                decoder = json.JSONDecoder()
+                for match in re.finditer(r"\{", candidate):
+                    try:
+                        payload, _ = decoder.raw_decode(candidate[match.start() :])
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(payload, dict):
+                        return payload
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return None
+
+    def _parse_legacy_findings(self, content: str) -> list[ReviewFinding]:
+        findings: list[ReviewFinding] = []
+        for match in re.finditer(
+            r"\[(CRITICAL|WARNING|SUGGESTION)\]\s+(.*?)(?:\s+\(([^():]+)(?::(\d+))?\))?$",
+            content,
+            re.MULTILINE,
+        ):
+            severity, message, file_path, line = match.groups()
+            findings.append(
+                ReviewFinding(
+                    severity=ReviewSeverity(severity.lower()),
+                    message=message.strip(),
+                    file=file_path,
+                    line=int(line) if line is not None else None,
+                )
+            )
+        return findings

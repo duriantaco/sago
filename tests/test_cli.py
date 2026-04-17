@@ -12,7 +12,8 @@ from sago.cli import app
 from sago.commands import get_phase_status
 from sago.commands.replan_cmd import _review_phases
 from sago.models.plan import Phase, Task
-from sago.models.state import TaskState, TaskStatus
+from sago.models.state import PhaseReview, TaskState, TaskStatus
+from sago.state import StateManager
 from tests.conftest import SAMPLE_PLAN
 
 runner = CliRunner()
@@ -314,18 +315,16 @@ def test_next_task_json(sago_project_with_plan: Path) -> None:
 
 
 def test_next_task_all_done(sago_project_with_plan: Path) -> None:
-    """next shows completion message when all tasks are done."""
+    """next blocks until a completed phase has been reviewed."""
     # Mark all tasks done
     for tid in ("1.1", "1.2"):
         runner.invoke(
             app,
             ["checkpoint", tid, "--path", str(sago_project_with_plan), "--no-git-tag"],
         )
-    # 1.1 was already done in SAMPLE_STATE, but we need to handle the 2-task plan
-    # The sample plan only has tasks 1.1 and 1.2
     result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan)])
     assert result.exit_code == 0
-    assert "complete" in result.output.lower()
+    assert "phase review required" in result.output.lower()
 
 
 def test_next_task_all_done_or_skipped(sago_project_with_plan: Path) -> None:
@@ -342,6 +341,26 @@ def test_next_task_all_done_or_skipped(sago_project_with_plan: Path) -> None:
         ],
     )
     assert result.exit_code == 0
+
+    next_result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan), "--json"])
+    assert next_result.exit_code == 0
+    payload = json.loads(next_result.output)
+    assert payload["state"] == "blocked"
+    assert payload["reason"] == "phase_review_required"
+
+
+def test_next_task_complete_after_phase_review(sago_project_with_plan: Path) -> None:
+    runner.invoke(
+        app,
+        ["checkpoint", "1.2", "--path", str(sago_project_with_plan), "--no-git-tag"],
+    )
+    StateManager(sago_project_with_plan / "STATE.md").record_phase_review(
+        PhaseReview(
+            phase_name="Phase 1: Foundation",
+            summary="Approved.",
+            reviewer="judge",
+        )
+    )
 
     next_result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan), "--json"])
     assert next_result.exit_code == 0

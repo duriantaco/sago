@@ -10,16 +10,22 @@ from rich.table import Table
 from sago.commands import (
     app,
     console,
+    get_phase_gates,
     get_phase_status,
     load_config,
     print_json_output,
+    serialize_state_for_builder,
     show_recommendations,
+    summarize_evidence,
+    summarize_memory,
 )
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
 from sago.models import Phase
+from sago.models.execution import ExecutionHistory
 from sago.models.plan import Plan
 from sago.models.state import ProjectState, TaskState, TaskStatus
+from sago.persistence import ExecutionHistoryStore
 from sago.recommendations import RecommendationEngine
 from sago.state import StateManager
 from sago.utils.agent_context import load_agent_context
@@ -113,7 +119,14 @@ def _show_status_next_steps(has_plan: bool) -> None:
 
 def _load_status_context(
     project_path: Path,
-) -> tuple[dict[str, Any], list[Phase], ProjectState | None, str | None, dict[str, Any]]:
+) -> tuple[
+    dict[str, Any],
+    list[Phase],
+    ProjectState | None,
+    str | None,
+    dict[str, Any],
+    ExecutionHistory | None,
+]:
     cfg = load_config(project_path)
     manager = ProjectManager(cfg)
     parser = MarkdownParser()
@@ -129,6 +142,7 @@ def _load_status_context(
     info = manager.get_project_info(project_path)
     agent_context = load_agent_context(project_path).to_summary_dict()
     state_mgr = StateManager(project_path / "STATE.md")
+    execution_history = ExecutionHistoryStore(project_path).load()
 
     plan_file = project_path / "PLAN.md"
     phases: list[Phase] = []
@@ -140,7 +154,7 @@ def _load_status_context(
             plan_error = str(e)
 
     state = state_mgr.get_project_state(phases) if phases else None
-    return info, phases, state, plan_error, agent_context
+    return info, phases, state, plan_error, agent_context, execution_history
 
 
 def _build_status_payload(
@@ -149,6 +163,7 @@ def _build_status_payload(
     state: ProjectState | None,
     plan_error: str | None,
     agent_context: dict[str, Any],
+    execution_history: ExecutionHistory | None,
 ) -> dict[str, Any]:
     has_plan = bool(phases)
     task_states = state.task_states if state else []
@@ -162,7 +177,11 @@ def _build_status_payload(
 
     recommendations: list[dict[str, Any]] = []
     if phases and state:
-        recs = RecommendationEngine().evaluate(plan=Plan(phases=phases), state=state)
+        recs = RecommendationEngine().evaluate(
+            plan=Plan(phases=phases),
+            state=state,
+            execution_history=execution_history,
+        )
         recommendations = [rec.model_dump() for rec in recs]
 
     return {
@@ -171,15 +190,18 @@ def _build_status_payload(
         "agent_context": agent_context,
         "has_plan": has_plan,
         "plan_error": plan_error,
-        "state": state.model_dump() if state else None,
+        "state": serialize_state_for_builder(state),
         "task_summary": task_summary,
+        "evidence_summary": summarize_evidence(state, execution_history),
+        "memory_summary": summarize_memory(state),
         "phases": get_phase_status(phases, task_states) if phases and state else [],
+        "phase_gates": get_phase_gates(phases, state) if phases and state else [],
         "recommendations": recommendations,
         "blockers": state.blockers if state else [],
         "next_steps": (
             [
                 "Point your coding agent at this project",
-                "Claude Code reads CLAUDE.md automatically",
+                "Read repo-local agent instructions such as IMPORTANT.md, AGENTS.md, or CLAUDE.md",
                 "sago status -d - Detailed task status",
             ]
             if has_plan
@@ -189,7 +211,9 @@ def _build_status_payload(
 
 
 def _do_status(project_path: Path, detailed: bool) -> None:
-    info, phases, state, plan_error, agent_context = _load_status_context(project_path)
+    info, phases, state, plan_error, agent_context, execution_history = _load_status_context(
+        project_path
+    )
 
     _show_status_overview(info, state)
     _show_agent_context(agent_context)
@@ -202,7 +226,20 @@ def _do_status(project_path: Path, detailed: bool) -> None:
 
     if phases and state:
         _show_task_progress(phases, state.task_states, detailed)
-        show_recommendations(phases, state.task_states)
+        phase_gates = get_phase_gates(phases, state)
+        if phase_gates:
+            console.print("\n[bold]Phase Gates:[/bold]")
+            for gate in phase_gates:
+                style = {"approved": "green", "pending_review": "yellow", "blocked": "red"}[
+                    gate["status"]
+                ]
+                console.print(f"  [{style}]{gate['phase_name']}: {gate['status']}[/{style}]")
+        show_recommendations(
+            phases,
+            state.task_states,
+            execution_history,
+            phase_reviews=state.phase_reviews,
+        )
 
     if state and state.blockers:
         console.print("\n[yellow]Known Blockers:[/yellow]")
@@ -219,10 +256,19 @@ def status(
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     try:
-        info, phases, state, plan_error, agent_context = _load_status_context(project_path)
+        info, phases, state, plan_error, agent_context, execution_history = _load_status_context(
+            project_path
+        )
         if json_output:
             print_json_output(
-                _build_status_payload(info, phases, state, plan_error, agent_context)
+                _build_status_payload(
+                    info,
+                    phases,
+                    state,
+                    plan_error,
+                    agent_context,
+                    execution_history,
+                )
             )
             return
         _do_status(project_path, detailed)
