@@ -49,7 +49,9 @@ def route_request(
     trace_path: Path,
     project_path: Path,
 ) -> Response:
-    parsed_path = urlparse(f"http://localhost{path}?{query}" if query else f"http://localhost{path}")
+    parsed_path = urlparse(
+        f"http://localhost{path}?{query}" if query else f"http://localhost{path}"
+    )
     url_path = parsed_path.path
     qs = parse_qs(parsed_path.query)
 
@@ -71,7 +73,9 @@ def _build_html_response() -> Response:
     try:
         content = _MISSION_CONTROL_HTML.read_bytes()
     except FileNotFoundError:
-        return Response(status=500, content_type="text/plain", body=b"mission_control.html not found")
+        return Response(
+            status=500, content_type="text/plain", body=b"mission_control.html not found"
+        )
     return Response(status=200, content_type="text/html; charset=utf-8", body=content)
 
 

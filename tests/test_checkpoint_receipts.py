@@ -59,7 +59,9 @@ def _write_receipt(
 
 
 def _load_plan_and_state(project_path: Path) -> tuple[Plan, ProjectState]:
-    phases = MarkdownParser().parse_xml_tasks((project_path / "PLAN.md").read_text(encoding="utf-8"))
+    phases = MarkdownParser().parse_xml_tasks(
+        (project_path / "PLAN.md").read_text(encoding="utf-8")
+    )
     state = StateManager(project_path / "STATE.md").get_project_state(phases)
     return Plan(phases=phases), state
 
@@ -259,7 +261,9 @@ def test_persisted_failed_receipts_drive_repeated_failure_recommendations(
     history = ExecutionHistory.from_json(history_path.read_text(encoding="utf-8"))
     plan, state = _load_plan_and_state(sago_project_with_plan)
 
-    recommendations = RecommendationEngine().evaluate(plan=plan, state=state, execution_history=history)
+    recommendations = RecommendationEngine().evaluate(
+        plan=plan, state=state, execution_history=history
+    )
     repeated_failures = [
         rec for rec in recommendations if rec.type == RecommendationType.WARN_REPEATED_FAILURE
     ]

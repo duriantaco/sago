@@ -110,7 +110,15 @@ def test_next_json_contract_phase_review_required_after_tasks_complete(
 ) -> None:
     checkpoint = runner.invoke(
         app,
-        ["checkpoint", "1.2", "--status", "done", "--path", str(sago_project_with_plan), "--no-git-tag"],
+        [
+            "checkpoint",
+            "1.2",
+            "--status",
+            "done",
+            "--path",
+            str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
     )
     assert checkpoint.exit_code == 0, checkpoint.output
 
@@ -142,7 +150,15 @@ def test_next_json_contract_phase_review_required_after_tasks_complete(
 def test_next_json_contract_complete_state_after_review(sago_project_with_plan: Path) -> None:
     checkpoint = runner.invoke(
         app,
-        ["checkpoint", "1.2", "--status", "done", "--path", str(sago_project_with_plan), "--no-git-tag"],
+        [
+            "checkpoint",
+            "1.2",
+            "--status",
+            "done",
+            "--path",
+            str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
     )
     assert checkpoint.exit_code == 0, checkpoint.output
     StateManager(sago_project_with_plan / "STATE.md").record_phase_review(

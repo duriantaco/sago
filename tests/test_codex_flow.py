@@ -67,7 +67,7 @@ def _write_receipt(
         "files_changed": [f"{task_id}.py"],
         "recorded_at": recorded_at,
         "builder": "codex",
-        "git_head": "abc1234"
+        "git_head": "abc1234",
     }
     path = project_path / f"{receipt['receipt_id']}.json"
     path.write_text(json.dumps(receipt), encoding="utf-8")
@@ -123,7 +123,10 @@ def test_codex_control_plane_flow_covers_failure_resume_review_and_replan(
     status_after_failure = json.loads(
         runner.invoke(app, ["status", "--path", str(sago_project), "--json"]).output
     )
-    assert status_after_failure["state"]["resume_point"]["failure_reason"] == "foundation verify failed"
+    assert (
+        status_after_failure["state"]["resume_point"]["failure_reason"]
+        == "foundation verify failed"
+    )
     assert status_after_failure["evidence_summary"] == {
         "receipts": 1,
         "verified_done": 0,
@@ -179,7 +182,7 @@ def test_codex_control_plane_flow_covers_failure_resume_review_and_replan(
             "status": "pending_review",
             "reviewed_at": None,
             "blocking_findings": [],
-            "summary": ""
+            "summary": "",
         }
     ]
 
@@ -194,6 +197,7 @@ def test_codex_control_plane_flow_covers_failure_resume_review_and_replan(
         error=None,
         metadata={"phase_review": review.model_dump(mode="json")},
     )
+
     async def fake_replan_workflow(*args: object, **kwargs: object) -> SimpleNamespace:
         plan_path = sago_project / "PLAN.md"
         plan_path.write_text(

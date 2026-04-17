@@ -357,7 +357,8 @@ def get_phase_gates(phases: list[Phase], state: ProjectState) -> list[dict[str, 
                 "status": gate_status.value,
                 "reviewed_at": review.reviewed_at if review is not None else None,
                 "blocking_findings": [
-                    finding.model_dump(mode="json") for finding in (review.blocking_findings() if review else [])
+                    finding.model_dump(mode="json")
+                    for finding in (review.blocking_findings() if review else [])
                 ],
                 "summary": review.summary if review is not None else "",
             }

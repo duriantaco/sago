@@ -111,9 +111,7 @@ def _build_next_payload(project_path: Path) -> dict[str, Any]:
                 else "Phase blocked by review findings."
             ),
             "reason": (
-                "phase_review_required"
-                if gate["status"] == "pending_review"
-                else "phase_blocked"
+                "phase_review_required" if gate["status"] == "pending_review" else "phase_blocked"
             ),
             "phase": gate["phase_name"],
             "failed_tasks": len(failed),

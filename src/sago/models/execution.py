@@ -146,7 +146,9 @@ class CheckpointReceipt(BaseModel):
     def to_execution_record(self, attempt: int) -> ExecutionRecord:
         """Convert a receipt into a canonical execution-history record."""
         task_id = self.task_id or ""
-        failure_category = None if self.exit_code == 0 else classify_failure(self.stderr, self.exit_code)
+        failure_category = (
+            None if self.exit_code == 0 else classify_failure(self.stderr, self.exit_code)
+        )
         verifier_result = VerifierResult(
             task_id=task_id,
             command=self.verify_command,

@@ -178,7 +178,9 @@ def _do_import(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        progress.add_task(description="Analyzing codebase and generating project files...", total=None)
+        progress.add_task(
+            description="Analyzing codebase and generating project files...", total=None
+        )
         asyncio.run(
             manager.generate_from_codebase(
                 codebase_context,
@@ -208,9 +210,7 @@ def _do_import(
 
 @app.command(name="import")
 def import_cmd(
-    project_path: Path = typer.Option(
-        Path.cwd(), "--path", "-p", help="Path to existing codebase"
-    ),
+    project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Path to existing codebase"),
     overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing sago files"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Non-interactive mode"),
     requirements: str | None = typer.Option(

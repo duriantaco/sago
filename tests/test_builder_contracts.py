@@ -61,7 +61,15 @@ def test_builder_contract_next_task_fixture(sago_project_with_plan: Path) -> Non
 def test_builder_contract_next_phase_gate_fixture(sago_project_with_plan: Path) -> None:
     result = runner.invoke(
         app,
-        ["checkpoint", "1.2", "--status", "done", "--path", str(sago_project_with_plan), "--no-git-tag"],
+        [
+            "checkpoint",
+            "1.2",
+            "--status",
+            "done",
+            "--path",
+            str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
     )
     assert result.exit_code == 0, result.output
 
@@ -89,7 +97,15 @@ def test_builder_contract_status_fixture(sago_project_with_plan: Path) -> None:
 def test_builder_contract_status_reviewed_phase_fixture(sago_project_with_plan: Path) -> None:
     result = runner.invoke(
         app,
-        ["checkpoint", "1.2", "--status", "done", "--path", str(sago_project_with_plan), "--no-git-tag"],
+        [
+            "checkpoint",
+            "1.2",
+            "--status",
+            "done",
+            "--path",
+            str(sago_project_with_plan),
+            "--no-git-tag",
+        ],
     )
     assert result.exit_code == 0, result.output
     StateManager(sago_project_with_plan / "STATE.md").record_phase_review(

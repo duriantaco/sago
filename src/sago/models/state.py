@@ -75,11 +75,7 @@ class PhaseReview(BaseModel):
         return PhaseGateStatus.APPROVED
 
     def blocking_findings(self) -> list[ReviewFinding]:
-        return [
-            finding
-            for finding in self.findings
-            if finding.severity == ReviewSeverity.CRITICAL
-        ]
+        return [finding for finding in self.findings if finding.severity == ReviewSeverity.CRITICAL]
 
     def to_markdown(self) -> str:
         lines = [
@@ -95,9 +91,7 @@ class PhaseReview(BaseModel):
             for finding in self.findings:
                 location = finding.location()
                 suffix = f" ({location})" if location else ""
-                lines.append(
-                    f"- [{finding.severity.value.upper()}] {finding.message}{suffix}"
-                )
+                lines.append(f"- [{finding.severity.value.upper()}] {finding.message}{suffix}")
         return "\n".join(lines).strip()
 
     @classmethod

@@ -82,7 +82,9 @@ def test_plan_yes_skips_placeholder_prompt(tmp_path: Path) -> None:
     from sago.agents.base import AgentResult, AgentStatus
 
     project_path = tmp_path / "placeholder-project"
-    init_result = runner.invoke(app, ["init", "placeholder-project", "--path", str(project_path), "--yes"])
+    init_result = runner.invoke(
+        app, ["init", "placeholder-project", "--path", str(project_path), "--yes"]
+    )
     assert init_result.exit_code == 0
 
     mock_result = AgentResult(
@@ -390,9 +392,7 @@ def test_doctor_json(sago_project_with_plan: Path) -> None:
     } <= check_names
 
 
-def test_doctor_missing_path_does_not_create_planning_dir(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_doctor_missing_path_does_not_create_planning_dir(tmp_path: Path, monkeypatch) -> None:
     missing_project = tmp_path / "missing-project"
     monkeypatch.chdir(tmp_path)
 
@@ -402,9 +402,7 @@ def test_doctor_missing_path_does_not_create_planning_dir(
     assert not (tmp_path / ".planning").exists()
 
 
-def test_load_config_project_path_creates_project_planning_dir(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_load_config_project_path_creates_project_planning_dir(tmp_path: Path, monkeypatch) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     project_path = tmp_path / "project"

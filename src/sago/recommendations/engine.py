@@ -141,7 +141,10 @@ class RecommendationEngine:
         for phase in plan.phases:
             if not phase.tasks:
                 continue
-            if all(t.id in completed_ids for t in phase.tasks) and phase.name not in state.phase_reviews:
+            if (
+                all(t.id in completed_ids for t in phase.tasks)
+                and phase.name not in state.phase_reviews
+            ):
                 recommendations.append(
                     Recommendation(
                         type=RecommendationType.SUGGEST_REVIEW,

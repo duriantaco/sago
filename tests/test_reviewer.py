@@ -238,9 +238,7 @@ class TestReviewerAgent:
         assert "Check quality." in messages[1]["content"]
         assert "REVIEW INSTRUCTIONS" in messages[1]["content"]
 
-    def test_parse_legacy_findings_fallback(
-        self, reviewer: ReviewerAgent
-    ) -> None:
+    def test_parse_legacy_findings_fallback(self, reviewer: ReviewerAgent) -> None:
         review = reviewer._parse_review_response(
             "Phase 1",
             "- [CRITICAL] Missing config validation (src/app.py:9)",
@@ -251,9 +249,7 @@ class TestReviewerAgent:
         assert review.findings[0].file == "src/app.py"
         assert review.findings[0].line == 9
 
-    def test_parse_json_with_surrounding_prose(
-        self, reviewer: ReviewerAgent
-    ) -> None:
+    def test_parse_json_with_surrounding_prose(self, reviewer: ReviewerAgent) -> None:
         review = reviewer._parse_review_response(
             "Phase 1",
             'Here is the review:\n{"summary":"Blocked.","findings":[{"severity":"critical","message":"Missing validation","file":"src/app.py","line":11}]}',
