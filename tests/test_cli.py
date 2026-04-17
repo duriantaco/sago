@@ -12,7 +12,8 @@ from sago.cli import app
 from sago.commands import get_phase_status
 from sago.commands.replan_cmd import _review_phases
 from sago.models.plan import Phase, Task
-from sago.models.state import TaskState, TaskStatus
+from sago.models.state import PhaseReview, TaskState, TaskStatus
+from sago.state import StateManager
 from tests.conftest import SAMPLE_PLAN
 
 runner = CliRunner()
@@ -81,7 +82,9 @@ def test_plan_yes_skips_placeholder_prompt(tmp_path: Path) -> None:
     from sago.agents.base import AgentResult, AgentStatus
 
     project_path = tmp_path / "placeholder-project"
-    init_result = runner.invoke(app, ["init", "placeholder-project", "--path", str(project_path), "--yes"])
+    init_result = runner.invoke(
+        app, ["init", "placeholder-project", "--path", str(project_path), "--yes"]
+    )
     assert init_result.exit_code == 0
 
     mock_result = AgentResult(
@@ -314,18 +317,16 @@ def test_next_task_json(sago_project_with_plan: Path) -> None:
 
 
 def test_next_task_all_done(sago_project_with_plan: Path) -> None:
-    """next shows completion message when all tasks are done."""
+    """next blocks until a completed phase has been reviewed."""
     # Mark all tasks done
     for tid in ("1.1", "1.2"):
         runner.invoke(
             app,
             ["checkpoint", tid, "--path", str(sago_project_with_plan), "--no-git-tag"],
         )
-    # 1.1 was already done in SAMPLE_STATE, but we need to handle the 2-task plan
-    # The sample plan only has tasks 1.1 and 1.2
     result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan)])
     assert result.exit_code == 0
-    assert "complete" in result.output.lower()
+    assert "phase review required" in result.output.lower()
 
 
 def test_next_task_all_done_or_skipped(sago_project_with_plan: Path) -> None:
@@ -342,6 +343,26 @@ def test_next_task_all_done_or_skipped(sago_project_with_plan: Path) -> None:
         ],
     )
     assert result.exit_code == 0
+
+    next_result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan), "--json"])
+    assert next_result.exit_code == 0
+    payload = json.loads(next_result.output)
+    assert payload["state"] == "blocked"
+    assert payload["reason"] == "phase_review_required"
+
+
+def test_next_task_complete_after_phase_review(sago_project_with_plan: Path) -> None:
+    runner.invoke(
+        app,
+        ["checkpoint", "1.2", "--path", str(sago_project_with_plan), "--no-git-tag"],
+    )
+    StateManager(sago_project_with_plan / "STATE.md").record_phase_review(
+        PhaseReview(
+            phase_name="Phase 1: Foundation",
+            summary="Approved.",
+            reviewer="judge",
+        )
+    )
 
     next_result = runner.invoke(app, ["next", "--path", str(sago_project_with_plan), "--json"])
     assert next_result.exit_code == 0
@@ -371,9 +392,7 @@ def test_doctor_json(sago_project_with_plan: Path) -> None:
     } <= check_names
 
 
-def test_doctor_missing_path_does_not_create_planning_dir(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_doctor_missing_path_does_not_create_planning_dir(tmp_path: Path, monkeypatch) -> None:
     missing_project = tmp_path / "missing-project"
     monkeypatch.chdir(tmp_path)
 
@@ -383,9 +402,7 @@ def test_doctor_missing_path_does_not_create_planning_dir(
     assert not (tmp_path / ".planning").exists()
 
 
-def test_load_config_project_path_creates_project_planning_dir(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_load_config_project_path_creates_project_planning_dir(tmp_path: Path, monkeypatch) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     project_path = tmp_path / "project"

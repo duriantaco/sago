@@ -19,6 +19,7 @@ class RecommendationType(StrEnum):
 
     SUGGEST_REPLAN = "suggest_replan"
     WARN_REPEATED_FAILURE = "warn_repeated_failure"
+    WARN_MISSING_EVIDENCE = "warn_missing_evidence"
     WARN_SCOPE_DRIFT = "warn_scope_drift"
     SUGGEST_REVIEW = "suggest_review"
     WARN_INVALID_VERIFY = "warn_invalid_verify"
@@ -48,6 +49,7 @@ class RecommendationEngine:
         """Run all recommendation rules and return results."""
         recommendations: list[Recommendation] = []
         recommendations.extend(self._check_repeated_failures(execution_history))
+        recommendations.extend(self._check_missing_evidence(state, execution_history))
         recommendations.extend(self._check_suggest_replan(plan, state))
         recommendations.extend(self._check_phase_complete(plan, state))
         recommendations.extend(self._check_suggest_review(plan, state))
@@ -69,6 +71,26 @@ class RecommendationEngine:
                 task_id=tid,
             )
             for tid in repeated
+        ]
+
+    def _check_missing_evidence(
+        self,
+        state: ProjectState,
+        execution_history: ExecutionHistory | None,
+    ) -> list[Recommendation]:
+        successful_receipts = (
+            execution_history.tasks_with_successful_receipts() if execution_history else set()
+        )
+        return [
+            Recommendation(
+                type=RecommendationType.WARN_MISSING_EVIDENCE,
+                message=(
+                    f"Task {task_id} is marked done but has no receipt-backed verification evidence."
+                ),
+                task_id=task_id,
+            )
+            for task_id in sorted(state.completed_task_ids())
+            if task_id not in successful_receipts
         ]
 
     def _check_suggest_replan(self, plan: Plan, state: ProjectState) -> list[Recommendation]:
@@ -119,7 +141,10 @@ class RecommendationEngine:
         for phase in plan.phases:
             if not phase.tasks:
                 continue
-            if all(t.id in completed_ids for t in phase.tasks):
+            if (
+                all(t.id in completed_ids for t in phase.tasks)
+                and phase.name not in state.phase_reviews
+            ):
                 recommendations.append(
                     Recommendation(
                         type=RecommendationType.SUGGEST_REVIEW,

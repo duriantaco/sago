@@ -26,6 +26,20 @@ It is **not** responsible for:
 5. `sago replan` reviews completed phases and updates the plan when needed
 6. `sago status`, `sago watch`, and `sago doctor` provide visibility and validation
 
+## Builder Contract
+
+The builder-facing contract should remain stable and explicit.
+
+- `sago next --json`
+  - returns one of `task`, `complete`, or `blocked`
+  - is the task-pickup surface for external builders
+- `sago checkpoint --json`
+  - records task outcome and returns the canonical checkpoint result
+- `sago status --json`
+  - exposes current project state, recommendations, blockers, and phase progress
+
+Codex is the first executor target to optimize for, but these interfaces must stay builder-agnostic.
+
 ## Active Internal Components
 
 ### `PlannerAgent`
@@ -51,6 +65,8 @@ The repository previously contained executor-oriented terminology and design ass
 The current direction is intentionally narrower:
 - keep planning and review first-party
 - keep execution external
-- keep the CLI and markdown contract stable for any builder
+- keep the CLI and builder contract stable for any builder
 
 That gives Sago a clearer position: project manager and phase gate for coding agents.
+
+The active implementation plan for this direction lives in `docs/CONTROL_PLANE_ROADMAP.md`.

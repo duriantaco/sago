@@ -135,7 +135,19 @@ class TestReviewerAgent:
         self, reviewer: ReviewerAgent, sample_phase: Phase, tmp_path: Path
     ) -> None:
         mock_response = {
-            "content": "- [WARNING] hello() has no docstring (src/app.py:1)",
+            "content": """
+{
+  "summary": "One warning found.",
+  "findings": [
+    {
+      "severity": "warning",
+      "message": "hello() has no docstring",
+      "file": "src/app.py",
+      "line": 1
+    }
+  ]
+}
+""",
             "usage": {"total_tokens": 100},
         }
 
@@ -154,6 +166,7 @@ class TestReviewerAgent:
         assert result.success
         assert "WARNING" in result.output
         assert result.metadata["phase_name"] == "Phase 1: Foundation"
+        assert result.metadata["phase_review"]["findings"][0]["file"] == "src/app.py"
 
     def test_llm_error_returns_failure(
         self, reviewer: ReviewerAgent, sample_phase: Phase, tmp_path: Path
@@ -224,6 +237,26 @@ class TestReviewerAgent:
         assert messages[1]["role"] == "user"
         assert "Check quality." in messages[1]["content"]
         assert "REVIEW INSTRUCTIONS" in messages[1]["content"]
+
+    def test_parse_legacy_findings_fallback(self, reviewer: ReviewerAgent) -> None:
+        review = reviewer._parse_review_response(
+            "Phase 1",
+            "- [CRITICAL] Missing config validation (src/app.py:9)",
+        )
+
+        assert review.gate_status.value == "blocked"
+        assert review.findings[0].severity.value == "critical"
+        assert review.findings[0].file == "src/app.py"
+        assert review.findings[0].line == 9
+
+    def test_parse_json_with_surrounding_prose(self, reviewer: ReviewerAgent) -> None:
+        review = reviewer._parse_review_response(
+            "Phase 1",
+            'Here is the review:\n{"summary":"Blocked.","findings":[{"severity":"critical","message":"Missing validation","file":"src/app.py","line":11}]}',
+        )
+
+        assert review.gate_status.value == "blocked"
+        assert review.findings[0].message == "Missing validation"
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from sago.commands import app, console, load_config, print_json_output
+from sago.commands import app, console, get_phase_gates, load_config, print_json_output
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
 from sago.models import Phase, Task
@@ -96,6 +96,28 @@ def _build_next_payload(project_path: Path) -> dict[str, Any]:
     from sago.validation import check_verify_safety
 
     phases, state_mgr, status_by_id, task_states, agent_context = _load_next_context(project_path)
+    state = state_mgr.get_project_state(phases)
+    failed = [ts for ts in task_states if ts.status == TaskStatus.FAILED]
+
+    for gate in get_phase_gates(phases, state):
+        if gate["status"] == "approved":
+            continue
+        return {
+            "success": True,
+            "state": "blocked",
+            "message": (
+                "Phase review required before continuing."
+                if gate["status"] == "pending_review"
+                else "Phase blocked by review findings."
+            ),
+            "reason": (
+                "phase_review_required" if gate["status"] == "pending_review" else "phase_blocked"
+            ),
+            "phase": gate["phase_name"],
+            "failed_tasks": len(failed),
+            "blocking_findings": gate["blocking_findings"],
+            "agent_context": agent_context,
+        }
 
     for phase in phases:
         for task in phase.tasks:
@@ -126,7 +148,6 @@ def _build_next_payload(project_path: Path) -> dict[str, Any]:
             "agent_context": agent_context,
         }
 
-    failed = [ts for ts in task_states if ts.status == TaskStatus.FAILED]
     return {
         "success": True,
         "state": "blocked",
@@ -149,7 +170,17 @@ def _do_next(project_path: Path) -> None:
     elif payload["state"] == "complete":
         console.print("[green]All tasks complete![/green]")
     else:
-        console.print("[yellow]No actionable tasks found.[/yellow]")
+        console.print(f"[yellow]{payload['message']}[/yellow]")
+        if payload.get("phase"):
+            console.print(f"  Phase: {payload['phase']}")
+        if payload.get("reason") == "phase_blocked":
+            for finding in payload.get("blocking_findings", []):
+                location = ""
+                if finding.get("file") and finding.get("line") is not None:
+                    location = f" ({finding['file']}:{finding['line']})"
+                elif finding.get("file"):
+                    location = f" ({finding['file']})"
+                console.print(f"  [red]- {finding['message']}{location}[/red]")
         if payload["failed_tasks"]:
             console.print(
                 f"  {payload['failed_tasks']} task(s) failed — run `sago replan` to adjust the plan."

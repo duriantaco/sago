@@ -5,11 +5,13 @@ from pathlib import Path
 
 import typer
 
-from sago.commands import app, console, load_config, print_json_output
+from sago.commands import app, console, load_config, print_json_output, summarize_evidence
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
 from sago.models import Phase
+from sago.models.execution import CheckpointReceipt
 from sago.models.state import TaskStatus
+from sago.persistence import ExecutionHistoryStore
 from sago.state import CheckpointResult, StateManager
 
 
@@ -41,6 +43,7 @@ class CheckpointParams:
     decisions: list[str] = field(default_factory=list)
     phase: str = ""
     git_tag: bool = True
+    receipt_file: Path | None = None
 
 
 def _print_checkpoint_result(
@@ -124,6 +127,19 @@ def _apply_checkpoint(project_path: Path, params: CheckpointParams) -> dict[str,
     if params.git_tag and task_status == TaskStatus.DONE:
         git_tag_created = _create_checkpoint_git_tag(project_path, params.task_id)
 
+    history_store = ExecutionHistoryStore(project_path)
+    persisted_receipt: CheckpointReceipt | None = None
+    if params.receipt_file is not None:
+        persisted_receipt = CheckpointReceipt.model_validate_json(
+            params.receipt_file.read_text(encoding="utf-8")
+        ).finalized(params.task_id, task_status)
+        history_store.append_receipt(persisted_receipt)
+
+    evidence_summary = summarize_evidence(
+        state_mgr.get_project_state(phases),
+        history_store.load(),
+    )
+
     return {
         "success": True,
         "task_id": params.task_id,
@@ -137,6 +153,16 @@ def _apply_checkpoint(project_path: Path, params: CheckpointParams) -> dict[str,
         "phase_completed": cp_result.phase_completed,
         "phase_complete_name": cp_result.phase_name,
         "git_tag_created": git_tag_created,
+        "receipt": {
+            "attached": persisted_receipt is not None,
+            "receipt_id": persisted_receipt.receipt_id if persisted_receipt is not None else None,
+            "path": (
+                f".planning/runtime/receipts/{persisted_receipt.receipt_id}.json"
+                if persisted_receipt is not None
+                else None
+            ),
+        },
+        "evidence_summary": evidence_summary,
     }
 
 
@@ -164,6 +190,11 @@ def checkpoint(
     phase: str = typer.Option("", "--phase", help="Override phase name"),
     project_path: Path = typer.Option(Path.cwd(), "--path", "-p", help="Project path"),
     git_tag: bool = typer.Option(True, "--git-tag/--no-git-tag", help="Create git tag on success"),
+    receipt_file: Path | None = typer.Option(
+        None,
+        "--receipt-file",
+        help="Path to a JSON verification receipt to persist with this checkpoint",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output structured JSON"),
 ) -> None:
     """Record a task checkpoint in STATE.md.
@@ -192,6 +223,7 @@ def checkpoint(
             decisions=decisions,
             phase=phase,
             git_tag=git_tag,
+            receipt_file=receipt_file,
         )
         if json_output:
             print_json_output(_apply_checkpoint(project_path=project_path, params=params))

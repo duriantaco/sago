@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -23,6 +24,84 @@ class TaskState(BaseModel):
     task_id: str
     status: TaskStatus
     note: str = ""
+
+
+class ReviewSeverity(StrEnum):
+    """Severity level for a phase-review finding."""
+
+    CRITICAL = "critical"
+    WARNING = "warning"
+    SUGGESTION = "suggestion"
+
+
+class ReviewFinding(BaseModel):
+    """A single structured review finding."""
+
+    severity: ReviewSeverity
+    message: str
+    file: str | None = None
+    line: int | None = None
+
+    def location(self) -> str:
+        if self.file and self.line is not None:
+            return f"{self.file}:{self.line}"
+        if self.file:
+            return self.file
+        return ""
+
+
+class PhaseGateStatus(StrEnum):
+    """Gate state for a completed phase."""
+
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    BLOCKED = "blocked"
+
+
+class PhaseReview(BaseModel):
+    """Structured review result for a completed phase."""
+
+    phase_name: str
+    summary: str = ""
+    findings: list[ReviewFinding] = Field(default_factory=list)
+    reviewed_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    reviewer: str = ""
+    raw_output: str = ""
+
+    @property
+    def gate_status(self) -> PhaseGateStatus:
+        if any(finding.severity == ReviewSeverity.CRITICAL for finding in self.findings):
+            return PhaseGateStatus.BLOCKED
+        return PhaseGateStatus.APPROVED
+
+    def blocking_findings(self) -> list[ReviewFinding]:
+        return [finding for finding in self.findings if finding.severity == ReviewSeverity.CRITICAL]
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"* **Gate:** {self.gate_status.value}",
+            f"* **Reviewed At:** {self.reviewed_at}",
+        ]
+        if self.reviewer:
+            lines.append(f"* **Reviewer:** {self.reviewer}")
+        if self.summary:
+            lines.extend(["", self.summary.strip()])
+        if self.findings:
+            lines.extend(["", "### Findings", ""])
+            for finding in self.findings:
+                location = finding.location()
+                suffix = f" ({location})" if location else ""
+                lines.append(f"- [{finding.severity.value.upper()}] {finding.message}{suffix}")
+        return "\n".join(lines).strip()
+
+    @classmethod
+    def from_legacy_summary(cls, phase_name: str, summary: str) -> PhaseReview:
+        return cls(
+            phase_name=phase_name,
+            summary=summary.strip(),
+            raw_output=summary.strip(),
+            reviewer="legacy",
+        )
 
 
 class ResumePoint(BaseModel):
@@ -53,6 +132,7 @@ class ProjectState(BaseModel):
     decisions: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     resume_point: ResumePoint | None = None
+    phase_reviews: dict[str, PhaseReview] = Field(default_factory=dict)
 
     def completed_task_ids(self) -> set[str]:
         """Return IDs of completed tasks."""

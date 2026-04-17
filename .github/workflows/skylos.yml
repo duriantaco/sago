@@ -28,7 +28,7 @@ jobs:
         run: fyn sync --group dev
 
       - name: Run tests for coverage data
-        run: fyn run test -- --tb=no -q
+        run: fyn run pytest --tb=no -q
 
       - name: Run Skylos Analysis
         run: fyn run --with skylos skylos . --gate --quality --danger --exclude-folder tests --exclude-folder examples

@@ -235,7 +235,8 @@ def test_append_phase_summary(tmp_path: Path) -> None:
     mgr.append_phase_summary("Phase 1: Foundation", "All tasks look good.")
 
     content = mgr.path.read_text(encoding="utf-8")
-    assert "## Phase Summary: Phase 1: Foundation" in content
+    assert "## Phase Review: Phase 1: Foundation" in content
+    assert "* **Gate:** approved" in content
     assert "All tasks look good." in content
 
 
@@ -245,7 +246,7 @@ def test_append_phase_summary_idempotent(tmp_path: Path) -> None:
     mgr.append_phase_summary("Phase 1: Foundation", "Review B")
 
     content = mgr.path.read_text(encoding="utf-8")
-    assert content.count("## Phase Summary: Phase 1: Foundation") == 1
+    assert content.count("## Phase Review: Phase 1: Foundation") == 1
 
 
 # ------------------------------------------------------------------
@@ -583,6 +584,27 @@ def test_checkpoint_no_auto_phase_on_failure(tmp_path: Path) -> None:
         phase_name="P1",
     )
     assert not result.phase_completed
+
+
+def test_checkpoint_auto_phase_complete_when_last_task_is_skipped(tmp_path: Path) -> None:
+    """Skipping the last remaining task still completes the phase."""
+    mgr = _make_manager(tmp_path)
+    mgr.checkpoint(
+        task_id="1.1",
+        task_name="A",
+        status=TaskStatus.DONE,
+        phase_task_ids=["1.1", "1.2"],
+        phase_name="P1",
+    )
+    result = mgr.checkpoint(
+        task_id="1.2",
+        task_name="B",
+        status=TaskStatus.SKIPPED,
+        phase_task_ids=["1.1", "1.2"],
+        phase_name="P1",
+    )
+    assert result.phase_completed
+    assert result.phase_name == "P1"
 
 
 def test_checkpoint_returns_result_without_phase_ids(tmp_path: Path) -> None:

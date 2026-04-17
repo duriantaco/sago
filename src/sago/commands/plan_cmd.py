@@ -203,7 +203,9 @@ def plan(
 ) -> None:
     """Generate PLAN.md from requirements and project context."""
     try:
-        payload = _do_plan(project_path, force, auto_accept=yes or json_output, json_output=json_output)
+        payload = _do_plan(
+            project_path, force, auto_accept=yes or json_output, json_output=json_output
+        )
         if json_output:
             print_json_output(payload)
             return

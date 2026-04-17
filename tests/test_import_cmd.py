@@ -1,6 +1,5 @@
 """Tests for sago import command."""
 
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -9,7 +8,6 @@ from typer.testing import CliRunner
 
 from sago.commands import app
 from sago.commands.import_cmd import _gather_codebase_context, _walk_tree
-
 
 runner = CliRunner()
 
@@ -141,9 +139,7 @@ class TestImportCommand:
 
         mock_generate.side_effect = fake_generate
 
-        result = runner.invoke(
-            app, ["import", "--path", str(existing_project), "--yes"]
-        )
+        result = runner.invoke(app, ["import", "--path", str(existing_project), "--yes"])
         assert result.exit_code == 0, result.output
         assert mock_generate.called
         # Check that codebase context was passed
@@ -178,9 +174,11 @@ class TestImportCommand:
             app,
             [
                 "import",
-                "--path", str(existing_project),
+                "--path",
+                str(existing_project),
                 "--yes",
-                "-r", "add user authentication",
+                "-r",
+                "add user authentication",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -190,6 +188,8 @@ class TestImportCommand:
         hint = (
             call_kwargs[1].get("requirements_hint")
             if "requirements_hint" in call_kwargs[1]
-            else call_kwargs[0][3] if len(call_kwargs[0]) > 3 else None
+            else call_kwargs[0][3]
+            if len(call_kwargs[0]) > 3
+            else None
         )
         assert hint == "add user authentication"

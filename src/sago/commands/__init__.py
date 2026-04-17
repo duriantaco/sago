@@ -1,6 +1,7 @@
 """sago CLI command package — shared state, config, and display helpers."""
 
 import json
+from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -13,8 +14,9 @@ from rich.table import Table
 from sago.core.config import Config, find_dotenv
 from sago.core.parser import MarkdownParser
 from sago.models import Phase
+from sago.models.execution import ExecutionHistory
 from sago.models.plan import Plan
-from sago.models.state import ProjectState, TaskState, TaskStatus
+from sago.models.state import PhaseGateStatus, PhaseReview, ProjectState, TaskState, TaskStatus
 from sago.recommendations import RecommendationEngine
 from sago.validation import PlanValidator
 
@@ -80,6 +82,8 @@ def _json_default(value: Any) -> Any:
     """Serialize common CLI payload types to JSON-friendly values."""
     if isinstance(value, Path):
         return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
     if isinstance(value, Enum):
         return value.value
     if hasattr(value, "model_dump"):
@@ -130,12 +134,17 @@ def check_llm_configured(cfg: Config | None = None) -> None:
     raise typer.Exit(1)
 
 
-def show_recommendations(phases: list[Phase], task_states: list[TaskState]) -> None:
+def show_recommendations(
+    phases: list[Phase],
+    task_states: list[TaskState],
+    execution_history: ExecutionHistory | None = None,
+    phase_reviews: dict[str, PhaseReview] | None = None,
+) -> None:
     """Evaluate and display recommendations based on plan + state."""
     plan = Plan(phases=phases)
-    state = ProjectState(task_states=task_states)
+    state = ProjectState(task_states=task_states, phase_reviews=phase_reviews or {})
     engine = RecommendationEngine()
-    recs = engine.evaluate(plan, state)
+    recs = engine.evaluate(plan, state, execution_history)
 
     if not recs:
         return
@@ -143,6 +152,7 @@ def show_recommendations(phases: list[Phase], task_states: list[TaskState]) -> N
     style_map = {
         "suggest_replan": "yellow",
         "warn_repeated_failure": "red",
+        "warn_missing_evidence": "yellow",
         "warn_scope_drift": "red",
         "suggest_review": "cyan",
         "warn_invalid_verify": "yellow",
@@ -154,6 +164,83 @@ def show_recommendations(phases: list[Phase], task_states: list[TaskState]) -> N
     for rec in recs:
         style = style_map.get(rec.type, "dim")
         console.print(f"  [{style}]{rec.message}[/{style}]")
+
+
+def summarize_evidence(
+    state: ProjectState | None,
+    execution_history: ExecutionHistory | None,
+) -> dict[str, int]:
+    """Build a concise evidence summary for builder-facing JSON payloads."""
+    receipts = len(execution_history.records) if execution_history is not None else 0
+    repeated_failures = (
+        len(execution_history.repeated_failures()) if execution_history is not None else 0
+    )
+    if state is None or execution_history is None:
+        return {
+            "receipts": receipts,
+            "verified_done": 0,
+            "missing_done": 0,
+            "repeated_failures": repeated_failures,
+        }
+
+    completed = state.completed_task_ids()
+    verified_done = execution_history.tasks_with_successful_receipts()
+    return {
+        "receipts": receipts,
+        "verified_done": len(completed & verified_done),
+        "missing_done": len(completed - verified_done),
+        "repeated_failures": repeated_failures,
+    }
+
+
+def summarize_memory(state: ProjectState | None) -> dict[str, Any]:
+    """Build a deterministic summary of the currently available project memory."""
+    if state is None:
+        return {
+            "decision_count": 0,
+            "blocker_count": 0,
+            "reviewed_phase_count": 0,
+            "decisions": [],
+            "blockers": [],
+            "reviewed_phases": [],
+        }
+
+    reviewed_phases = sorted(state.phase_reviews)
+    return {
+        "decision_count": len(state.decisions),
+        "blocker_count": len(state.blockers),
+        "reviewed_phase_count": len(reviewed_phases),
+        "decisions": list(state.decisions),
+        "blockers": list(state.blockers),
+        "reviewed_phases": reviewed_phases,
+    }
+
+
+def serialize_state_for_builder(state: ProjectState | None) -> dict[str, Any] | None:
+    """Return a stable builder-facing state payload."""
+    if state is None:
+        return None
+
+    return {
+        "active_phase": state.active_phase,
+        "current_task": state.current_task,
+        "task_states": [task_state.model_dump(mode="json") for task_state in state.task_states],
+        "decisions": list(state.decisions),
+        "blockers": list(state.blockers),
+        "resume_point": state.resume_point.model_dump(mode="json") if state.resume_point else None,
+        "phase_reviews": {
+            phase_name: {
+                "phase_name": review.phase_name,
+                "summary": review.summary,
+                "gate_status": review.gate_status.value,
+                "reviewed_at": review.reviewed_at,
+                "reviewer": review.reviewer,
+                "finding_count": len(review.findings),
+                "findings": [finding.model_dump(mode="json") for finding in review.findings],
+            }
+            for phase_name, review in state.phase_reviews.items()
+        },
+    }
 
 
 def show_validation_results(phases: list[Phase]) -> bool:
@@ -248,6 +335,35 @@ def get_phase_status(phases: list[Phase], task_states: list[TaskState]) -> list[
             }
         )
     return result
+
+
+def get_phase_gates(phases: list[Phase], state: ProjectState) -> list[dict[str, Any]]:
+    """Return gate status for completed phases."""
+    state_by_id = {ts.task_id: ts.status.value for ts in state.task_states}
+    gates: list[dict[str, Any]] = []
+    for phase in phases:
+        done = sum(1 for t in phase.tasks if state_by_id.get(t.id) == "done")
+        failed = sum(1 for t in phase.tasks if state_by_id.get(t.id) == "failed")
+        skipped = sum(1 for t in phase.tasks if state_by_id.get(t.id) == "skipped")
+        pending = len(phase.tasks) - done - failed - skipped
+        if pending != 0 or failed != 0:
+            continue
+
+        review = state.phase_reviews.get(phase.name)
+        gate_status = review.gate_status if review is not None else PhaseGateStatus.PENDING_REVIEW
+        gates.append(
+            {
+                "phase_name": phase.name,
+                "status": gate_status.value,
+                "reviewed_at": review.reviewed_at if review is not None else None,
+                "blocking_findings": [
+                    finding.model_dump(mode="json")
+                    for finding in (review.blocking_findings() if review else [])
+                ],
+                "summary": review.summary if review is not None else "",
+            }
+        )
+    return gates
 
 
 # ---------------------------------------------------------------------------

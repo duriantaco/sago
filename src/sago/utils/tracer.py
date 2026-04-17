@@ -112,7 +112,9 @@ class Tracer:
         if not self._enabled:
             return None
 
-        resolved_parent_span_id = self._current_parent_span_id() if inherit_parent else parent_span_id
+        resolved_parent_span_id = (
+            self._current_parent_span_id() if inherit_parent else parent_span_id
+        )
 
         event = TraceEvent(
             event_type=event_type,
