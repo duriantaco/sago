@@ -8,8 +8,8 @@ import typer
 from sago.commands import app, console, load_config, print_json_output, summarize_evidence
 from sago.core.parser import MarkdownParser
 from sago.core.project import ProjectManager
-from sago.models.execution import CheckpointReceipt
 from sago.models import Phase
+from sago.models.execution import CheckpointReceipt
 from sago.models.state import TaskStatus
 from sago.persistence import ExecutionHistoryStore
 from sago.state import CheckpointResult, StateManager

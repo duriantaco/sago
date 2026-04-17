@@ -8,7 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sago.models.plan import Phase
-from sago.models.state import PhaseGateStatus, PhaseReview, ProjectState, ResumePoint, TaskState, TaskStatus
+from sago.models.state import (
+    PhaseGateStatus,
+    PhaseReview,
+    ProjectState,
+    ResumePoint,
+    TaskState,
+    TaskStatus,
+)
 from sago.persistence import PersistedProjectState, ProjectStateStore
 
 logger = logging.getLogger(__name__)

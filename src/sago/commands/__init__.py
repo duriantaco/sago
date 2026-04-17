@@ -13,8 +13,8 @@ from rich.table import Table
 
 from sago.core.config import Config, find_dotenv
 from sago.core.parser import MarkdownParser
-from sago.models.execution import ExecutionHistory
 from sago.models import Phase
+from sago.models.execution import ExecutionHistory
 from sago.models.plan import Plan
 from sago.models.state import PhaseGateStatus, PhaseReview, ProjectState, TaskState, TaskStatus
 from sago.recommendations import RecommendationEngine

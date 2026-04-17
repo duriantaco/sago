@@ -1,6 +1,5 @@
 """Tests for sago import command."""
 
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -9,7 +8,6 @@ from typer.testing import CliRunner
 
 from sago.commands import app
 from sago.commands.import_cmd import _gather_codebase_context, _walk_tree
-
 
 runner = CliRunner()
 

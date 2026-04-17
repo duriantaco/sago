@@ -518,8 +518,8 @@ Tasks in `PLAN.md` use XML inside markdown:
 fyn sync --group dev          # install the project and dev dependencies
 
 fyn run test                  # run all tests
-fyn run test -- tests/test_parser.py -v              # single file
-fyn run test -- tests/test_parser.py::test_name -v   # single test
+fyn run pytest tests/test_parser.py -v               # single file
+fyn run pytest tests/test_parser.py::test_name -v    # single test
 
 fyn run lint                  # lint
 fyn run format                # format
